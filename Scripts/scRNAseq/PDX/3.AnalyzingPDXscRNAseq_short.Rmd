@@ -1,0 +1,754 @@
+---
+title: "PDX HBCx-95 scRNAseq"
+author: Céline Vallot
+date: 21/04/2020
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+library(devtools)
+#library(BiocInstaller)
+#library(pheatmap)
+#library(limma)
+#library(Matrix)
+library(dplyr)
+library(DropletUtils)
+library(irlba)
+library(corrplot)
+library(geco.utils)
+library(geco.visu)
+library(ConsensusClusterPlus)
+library(geco.unsupervised)
+#library(heatmap.plus)
+library(scatterplot3d)
+library(scater)
+library(Rtsne)
+library(ccRemover)
+library(colorRamps)
+library(geco.supervised)
+library(viridis)
+library(colorRamps)
+library(RColorBrewer)
+library(scTools)
+
+library(geco.supervised);  library(edgeR); library(ggplot2); library(rgl); library(RColorBrewer); library(genefilter); library(xtable); library(geco.RNAseq); library(WriteXLS); library(data.table); library(stringr); library(limma); library(edgeR)
+
+library(scTools)
+library(monocle3)
+library(dplyr)
+library(WriteXLS)
+
+QCdir <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/QC"
+resdir <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/Results_PDX/"
+resSUBdir <- file.path(resdir, paste0("Unsupervised")) ; if(!file.exists(resSUBdir)){dir.create(resSUBdir)}
+RDatadir <- file.path(resSUBdir,"RData") ; if(!file.exists(RDatadir)){dir.create(RDatadir)}
+
+################################################################################
+# Parameters --------------------------------------------------------------
+################################################################################
+
+## packages Seurat or scater attach an enormous amount of bystander packages, they cannot be loaded in the same session without crashing the DLLs.
+##Hierarchical clustering
+distHC <- c("distPearson","distCosine","euclidean","maximum","manhattan","canberra","binary","minkowski")[1]
+methHC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
+
+##ConsClust
+repsCC <- 1000
+pItemCC <- 0.8
+pFeatureCC <- 1
+clusterAlgCC <- c("hc","pam","km","kmdist")[1]
+distCC <- c("pearson","distCosine","euclidean","manhattan")[1]
+innerLinkageCC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
+finalLinkageCC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
+
+## Heatmap
+chRangeHM <-TRUE # Should be set to TRUE for expression data, FALSE for methylation data
+hmColors <- colorRampPalette(c("royalblue","white","indianred1"))(256)
+corColors <- colorRampPalette(c("royalblue1","white","indianred1"))(256)
+
+# setwd(RDatadir)
+load(file.path(RDatadir,"HBCx95.RData"))
+load(file.path(RDatadir,"pca.RData")) #if starting from prior analysis
+load(file.path(RDatadir,"annot_anocol_final.RData"))#if starting from prior analysis
+load(file.path(RDatadir,"umap.RData"))#if starting from prior analysis
+annotationDatabases <- c("MSigDB") # "KEGG" or "GO" or "KEGG_GO" or "MSigDB"
+
+```
+
+We can start from already performed analysis to make figures.
+
+### Analyzing all cells from v3 10X kits with all genes
+
+Here, we use Monocle3 to reduce dimensions using PCA and UMAP, based on all genes. Cells are colored according to sample_id, cluster membership (louvain), expression of ribosomal genes and total counts.
+
+### Studying cell cycle with Seurat, calculate a cell cycle score
+
+Here we use CellCycleScoring function to annotate cells with a cell cycle phase.
+By the way we perform as a comparison PCA and UMAP reduction using Seurat. The main difference with our prior analysis is that Seurat performs PCA solely on the most varying genes (n=2000) and not the entire dataset. The segragation of cells seems less efficient in 2-D space then with all genes.
+
+```{r, echo=FALSE}
+
+library(Seurat)
+
+# A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can
+# segregate this list into markers of G2/M phase and markers of S phase
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+
+# Create our Seurat object and complete the initalization steps
+rownames(Signal) <- gene_metadata$Symbol
+annot_sel <- annot[annot$kit %in% c("v3"),]
+
+marrow <- CreateSeuratObject(counts = Signal[,annot_sel$cell_id])
+marrow <- NormalizeData(marrow)
+marrow <- FindVariableFeatures(marrow, selection.method = "vst")
+marrow <- ScaleData(marrow, features = rownames(marrow))
+marrow <- RunPCA(marrow, features = VariableFeatures(marrow), ndims.print = 1:10, nfeatures.print = 10)
+DimPlot(marrow, reduction = "pca")
+DimHeatmap(marrow, dims = 1:3, cells = 1000, balanced = TRUE)
+ElbowPlot(marrow)
+marrow <- FindNeighbors(marrow, dims = 1:20)
+marrow  <- FindClusters(marrow, resolution = 0.5)
+marrow <- RunUMAP(marrow, dims = 1:20)
+
+DimPlot(marrow, reduction = "umap")
+
+marrow <- CellCycleScoring(marrow, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+# RidgePlot(marrow, features = c("PCNA", "TOP2A", "MCM6", "MKI67"), ncol = 2)
+# marrow <- RunPCA(marrow, features = c(s.genes, g2m.genes))
+# DimPlot(marrow)
+# DimHeatmap(marrow, dims = 1:3, cells = 1000, balanced = TRUE)
+
+# pca_object <- marrow[['pca']]@cell.embeddings
+# umap_res <- marrow[['umap']]@cell.embeddings
+
+annot_seurat <- data.frame (Seurat_cluster=paste0("C",marrow$seurat_clusters),cell_cycle=marrow$Phase)
+annot_seurat$cell_id <- rownames(annot_seurat)
+if(all.equal(rownames(annot_sel),rownames(annot_seurat))) annot_sel2 <- cbind(annot_sel,annot_seurat) else print("ERROR")
+
+# FeaturePlot(marrow, features = c("KDM6B", "MGP","IGFBP3","KRT6A","KRT14"))
+annotCol <- c("sample_id","total_features","Seurat_cluster","cell_cycle")
+pcaText <- FALSE
+annotText <- "sample_id"
+hcText <- "sample_id"  
+
+# anocol <- geco.annotToCol3(annotS=annot_sel2[,annotCol],annotT=annot_sel2,plotLegend=T,plotLegendFile=file.path(resSUBdir,"Annotation_legends.pdf"), categCol=NULL)
+
+rm(marrow); gc()
+
+```
+
+###Study cells with PCA, UMAP & hierarchical clustering
+
+```{r, echo=FALSE}
+
+rownames(Signal) <- gene_metadata$Symbol
+rownames(annot_sel2) <- annot_sel2$cell_id
+rownames(gene_metadata) <- gene_metadata$Symbol
+cds <- new_cell_data_set(Signal[,rownames(annot_sel2)],
+                         cell_metadata = annot_sel2,
+                         gene_metadata  = gene_metadata)
+rm(Signal);gc()
+cds <- preprocess_cds(cds,method='PCA', norm_method='size_only',num_dim=50)
+
+cds <- reduce_dimension(cds, reduction_method = 'UMAP')
+cds <-  cluster_cells(cds)
+
+annot_sel2$louvain_cluster <- cds@clusters[[1]]$clusters
+annot_sel2$louvain_cluster <- paste0("C",annot_sel2$louvain_partition)
+
+annot_sel2$louvain_partition <- cds@clusters[[1]]$partition
+annot_sel2$louvain_partition <- paste0("C",annot_sel2$louvain_partition)
+
+umap_res <- cds@reducedDims$UMAP # with R3.6.2 and higher for SummarizedExperiment, otherwise cds@reducedDims[[2]]
+pca_object <- cds@reducedDims$PCA
+
+save(umap_res,file=file.path(RDatadir,"umap.RData"))
+save(pca_object,file=file.path(RDatadir,"pca.RData"))
+
+NormCounts <- t(t(exprs(cds)) /  pData(cds)[, 'Size_Factor']) #keep format sparse matrix, need to have row and colnames separate
+LogCounts <- log(NormCounts+1,2)
+
+save(NormCounts,file=file.path(RDatadir,"NormCounts.RData"))
+save(LogCounts,file=file.path(RDatadir,"LogCounts.RData"))
+rm(NormCounts); gc()
+rm(cds); gc()
+```
+
+
+###Perform hierarchical clustering
+```{r , out.width="30%",include=FALSE}
+mati <- t(pca_object)
+hc_PCA <- hclust(as.dist(1 - cor(mati)), method = "ward.D")
+mat.so.cor <- mati[,hc_PCA$order]
+
+nclust <- 5
+annot_sel2$clustCol5 <- paste("C",match(cutree(hc_PCA,nclust),unique(cutree(hc_PCA,nclust)[hc_PCA$order])),sep="")
+nclust <- 6
+annot_sel2$clustCol6 <- paste("C",match(cutree(hc_PCA,nclust),unique(cutree(hc_PCA,nclust)[hc_PCA$order])),sep="")
+nclust <- 4
+annot_sel2$clustCol4 <- paste("C",match(cutree(hc_PCA,nclust),unique(cutree(hc_PCA,nclust)[hc_PCA$order])),sep="")
+
+##Association of annotation to partition
+# annotCol2 <- c("sample_id","total_features","cell_cycle","rRNA","MKI67","KRT14","NNMT")
+# 
+# maxKHC <- 15
+# for(k in 2:maxKHC)
+# {
+# 	if(k==2){pval <- geco.groupsVSannot(groups=cutree(hc_PCA,k),annotS=annot_sel2[,annotCol2],annotT=annot_sel2)$pval[,c("anotype","pval")]}else{
+# 		pval <- data.frame(pval,geco.groupsVSannot(groups=cutree(hc_PCA,k),annotS=annot_sel2[,annotCol2],annotT=annot_sel2)$pval[,"pval"])
+# 	}
+# }
+# colnames(pval)[-1] <- paste("k",2:maxKHC,sep="")
+# pval <- data.frame(Annot=rownames(pval), pval)
+# WriteXLS(pval,file.path(resSUBdir,"Hierarchical_clustering_vs_annot.xls"),row.names = T)
+# 
+# 
+# pdf(file.path(resSUBdir,"Hierarchical_clustering_vs_annot.pdf"))
+# par(mai=c(1,2,1,1))
+# geco.imagePval(t(pval[,-1]),xlab.cex=1,ylab.cex=1)
+# dev.off()
+```
+
+```{r, echo=FALSE}
+load(file.path(RDatadir,"LogCounts.RData"))
+load(file.path(RDatadir,"annot_anocol_final.RData"))
+
+diff_genes <-  c("NNMT","TAGLN","INHBA","KRT6A","KRT6B","KRT16","KRT14","KLK10","KLK5","KLK7")
+diff_genes_figures <-  c("BMP6","CDKN2B","TGFBR2","TGFBR3","TGFB2","INHBA","INHBB","SMAD2","TGFB1","FOSL1","NNMT","KRT14","KLK10","KLK5","TAGLN","NNMT","ELN","TGFBR3","MIF")
+hallmark_EMT <- c("FN1","TAGLN","NNMT","ELN","INHBA","MYL9","FBLN2","TGFBR3","CRLF1")
+
+KEGG_TGFB_FC1 <- c("INHBB","INHBA","CREBBP","ROCK1","ID4","RBL2","SMAD4","SMAD1","SMAD2","MAPK1","SMURF1","EP300","TGFB2","CDKN2B","PPP2R1A","SMAD5","FST","TGFBR2","SMAD7","BMPR2","BMPR1B","ACVR2B","ACVR2A","SP1","BMP6","THBS1")
+TGF_pathway <- c("TGFBR3","TGFBR2","TGFB2","INHBA","INHBB")
+
+KEGG_TGFB_FC2 <-  c("CDKN2B","ID4","BMP6","INHBA","INHBB")
+
+hallmark_TNFA <- c("CXCL2","ATF3","NFKBIA","TNFAIP3","IER3","CCL20","MAFF","BIRC3","PLAUR","ZFP36","PPP1R15A","NR4A2","MAP3K8","IL6","FOSL1","NR4A1","REL","NR4A3","GEM","GADD45A","PLK2","BHLHE40","NFIL3","TRIB1","TIPARP","INHBA","SGK1","FOSL2","CDKN1A","CYR61","IFIT2","IRF1","FOS","KLF4","LAMB3","CCNL1","CLCF1","IRS2","DUSP4","MXD1")
+
+hallmark_IFN <- c("MX1","BST2","OASL","IFI44L","IFI27","PTGS2","HLA-B")
+KRT_signature <- c("KRT6A","KRT6B","KRT79","KRT14","KRT80","KRT23","KRT16","KRT15")
+hallmark_apoptosis <- c("BIRC3","BIK","CDKN1A","DDIT3","IL18","TNFRSF12A","HSPB1","ATF3","HMOX1","IER3","TGFB2","TXNIP","ANXA1")
+
+
+NRG1_signalling <- c("NFIL3","ID1","TIPARP","MIR22HG","AVPI1","ATF3","CLCF1","PPP1R15A","GADD45A","CYP24A1","ZFP36","USP36","CYR61","TRIB1","MAP3K8","BHLHE40","ZNF331","GEM","TNFRSF11B","PLAUR","MAFF","NR4A2","DLX2","IER3","SGK1","FOS","REL","DUSP4","CTH","FOSL1","IL6R","SPRR1B","CCNL1","IRS2","NR4A3","NR4A1","DDIT3")
+
+MYB_targets <- c("HSPB1","MAP1LC3B","S100A7","CDKN1A","HMOX1","SERPINB2","RRAD","ANXA1","KRT17","ANXA3","MYL12A","TUBA4A","KRT16","IL8","ARID5B","IGFBP7","KRT14","AHNAK2","KRT6A","PURA","NNMT")
+
+SMID_LUMINAL_DN <- c("ALDH1A3","NNMT","ID4","KYNU","KRT6A","NOV","KRT23","DSC3","TNFRSF11B","CLIC3","IL8","ANXA1","ANXA3","BIRC3","TMEM45A","KLK7","DSC2","KRT17","ADM","KLK6","KLK10","ID1","KRT16","S100A7","KRT14","TAGLN","PERP")
+
+
+#annotCol <- c("sample_id","total_features","cell_cycle","rRNA","clustCol10","MKI67",diff_genes)
+annotCol <- c("sample_id","total_features","cell_cycle","rRNA","clustCol4","clustCol5","clustCol6","louvain_partition",
+              "louvain_cluster","Seurat_cluster",
+              "MKI67","KEGG_TGFB_FC1","KEGG_TGFB_FC2",diff_genes_figures,"TGF_pathway","hallmark_EMT","MYB_targets",
+              "hallmark_TNFA")
+
+# annotCol <- c("sample_id","louvain_partition","total_features","clustCol10","cell_cycle","hallmark_EMT","hallmark_IFN","KRT_signature","hallmark_apoptosis","hallmark_TNFA","NRG1_signalling","MYB_targets","SMID_LUMINAL_DN","TMEM45A","INHBA","TAGLN","NNMT","KRT6A","KRT6B","KRT14","KRT16","KLK10","IL6","MKI67","ARID5B","JUND","KRT17","JUN","FOSL1","AQP3","KLK5","KDM6A","KDM6B","EZH2","CDH1")
+
+pcaText <- FALSE
+annotText <- "sample_id"
+#hcText <- "sample_id"  
+
+genes <- c("KEGG_TGFB_FC1","KEGG_TGFB_FC2","TGF_pathway","hallmark_EMT","hallmark_apoptosis","hallmark_TNFA","NRG1_signalling","MYB_targets","SMID_LUMINAL_DN")
+
+for(i in 1:length(genes)) {
+genelist <- get(genes[i])
+annot_sel2$test <- apply(LogCounts[genelist,],2,mean)
+colnames(annot_sel2)[dim(annot_sel2)[2]] <- genes[i]
+}
+
+annot_sel2$ELN <- LogCounts["ELN",]; gc()
+#TGFB
+annot_sel2$SMAD2 <- LogCounts["SMAD2",]; gc()
+annot_sel2$TGFB2 <- LogCounts["TGFB2",]; gc()
+annot_sel2$TGFBR3 <- LogCounts["TGFBR3",]; gc()
+annot_sel2$INHBB <- LogCounts["INHBB",]; gc()
+annot_sel2$INHBA <- LogCounts["INHBA",]; gc()
+annot_sel2$TGFBR2 <- LogCounts["TGFBR2",]; gc()
+annot_sel2$TGFB1 <- LogCounts["TGFB1",]; gc()
+annot_sel2$CDKN2B <- LogCounts["CDKN2B",]; gc()
+annot_sel2$BMP6 <- LogCounts["BMP6",]; gc()
+
+annot_sel2$ARID5B <- LogCounts["ARID5B",]; gc()
+annot_sel2$JUN <- LogCounts["JUN",]; gc()
+annot_sel2$FOSL1 <- LogCounts["FOSL1",]; gc()
+annot_sel2$AQP3 <- LogCounts["AQP3",]; gc()
+annot_sel2$EZH2 <- LogCounts["EZH2",]; gc()
+annot_sel2$KDM6A <- LogCounts["KDM6A",]; gc()
+annot_sel2$KDM6B <- LogCounts["KDM6B",]; gc()
+annot_sel2$CDH1 <- LogCounts["CDH1",]; gc()
+
+annot_sel2$KRT17 <- LogCounts["KRT17",]; gc()
+
+annot_sel2$MKI67 <- LogCounts["MKI67",]; gc()
+annot_sel2$KRT14 <- LogCounts["KRT14",]; gc()
+annot_sel2$KRT6A <- LogCounts["KRT6A",]; gc()
+annot_sel2$KRT6B <- LogCounts["KRT6B",]; gc()
+annot_sel2$KRT16 <- LogCounts["KRT16",]; gc()
+annot_sel2$KLK10 <- LogCounts["KLK10",]; gc()
+annot_sel2$KLK5 <- LogCounts["KLK5",]; gc()
+
+annot_sel2$TMEM45A <- LogCounts["TMEM45A",]; gc()
+annot_sel2$NNMT <- LogCounts["NNMT",]; gc()
+annot_sel2$INHBA <- LogCounts["INHBA",]; gc()
+annot_sel2$TAGLN <- LogCounts["TAGLN",]; gc()
+annot_sel2$MIF <- LogCounts["MIF",]; gc()
+
+load("../common_over_genes_pers_vs_unt.RData")
+for(i in common_over_genes){
+  annot_sel2[,i] = LogCounts[i,annot_sel2$cell_id]
+}
+annotCol = unique(c(annotCol, common_over_genes))
+
+ribo <- grepl("^RP[SL]",gene_metadata$Symbol)
+annot_sel2$rRNA <- apply(LogCounts[ribo,],2,mean)
+
+library(geco.unsupervised)
+anocol2 <- geco.unsupervised::geco.annotToCol4(annotS=annot_sel2[,annotCol],annotT=annot_sel2,plotLegend=T,plotLegendFile=file.path(resSUBdir,"Annotation_legends.pdf"),scale_q = "inferno")
+
+
+#Common palette for all MM468 experiments
+control <- c("#E0E0E0","#BDBDBD","#757575")
+persister_color <- c("#DCEDC8","#9CCC65","#4CAF50","#009688")
+treated_UNC_color <- c("#2196F3", "#4DD0E1" )
+treated_GSKJ4_color <- c("#C2185B", "#EC407A" )
+res_color <- c("#FFEB3B","#FFC107","#FF9800","#FF5722")
+color_PDX <- c(control[c(1,2)],persister_color[c(1,3)],res_color[c(2)],"#ffcbcb")
+
+corres <- data.frame(PDX=c("HBCx95_v3_UNT","HBCx95_m9_50_REC","HBCx95_persister_2souris","HBCx95_persister_6souris","HBCx95_m30_CAPAR","HBCx95_m6_CAPAS"),color=color_PDX)
+anocol2[,"sample_id"] <- as.character(corres$color[match(annot_sel2$sample_id,corres$PDX)])
+
+corres_cell_cycle <- data.frame(phase=c("G1","G2M","S"),color=c("#e896aaff","#553fc2ff","#5d6c7dff"))
+indice <- which(annotCol=="cell_cycle")
+anocol2[,indice] <- as.character(corres_cell_cycle$color[match(annot_sel2$cell_cycle,corres_cell_cycle$phase)])
+
+corres_cluster <- data.frame(phase=c("C1","C2","C3","C4","C5"),color=c("#b9cced","#6a8caf","#438a5e","#e2979c","#ff9c71"))
+indice <- which(annotCol=="clustCol5")
+anocol2[,indice] <- as.character(corres_cluster$color[match(annot_sel2$clustCol5,corres_cluster$phase)])
+corres_cluster <- data.frame(phase=c("C1","C2","C3","C4","C5"),color=c("#438a5e","#6a8caf","#ff9c71","#e2979c","#b9cced"))
+indice <- which(annotCol=="louvain_partition")
+anocol2[,indice] <- as.character(corres_cluster$color[match(annot_sel2$louvain_partition,corres_cluster$phase)])
+
+png(file.path(resSUBdir,"Legend_sample_scRNAseq.png"), height=2000,width=1500,res=300)
+par(mfrow=c(5,2))
+barplot(rep(1,6),col=corres$color, cex.names  =0.8,horiz=F,names.arg=corres$PDX,las=2)
+dev.off()
+
+png(file.path(resSUBdir,"Legend_cluster_scRNAseq.png"), height=2000,width=1500,res=300)
+par(mfrow=c(5,2))
+barplot(rep(1,5),col=corres_cluster$color, cex.names  =0.8,horiz=F,names.arg=c("C1","C2","C3","C4","C5"),las=2)
+dev.off()
+
+
+png(file.path(resSUBdir,"Boxplot_KEGG_TGFB_FC2.png"),width=1500,height=1500,res=300)
+boxplot(annot_sel2$KEGG_TGFB_FC2~annot_sel2$sample_id,las=2)
+dev.off()
+png(file.path(resSUBdir,"Boxplot_KEGG_TGFB_FC1.png"),width=1500,height=1500,res=300)
+boxplot(annot_sel2$KEGG_TGFB_FC1~annot_sel2$sample_id,las=2)
+dev.off()
+png(file.path(resSUBdir,"Boxplot_INHBA.png"),width=1500,height=1500,res=300)
+boxplot(annot_sel2$INHBA~annot_sel2$sample_id,las=2)
+dev.off()
+
+png(file.path(resSUBdir,"Boxplot_rRNA.png"),width=1500,height=1500,res=300)
+boxplot(annot_sel2$rRNA~annot_sel2$sample_id,las=2)
+dev.off()
+save(anocol2,annot_sel2,file=file.path(RDatadir,"annot_anocol_final.RData")) 
+```
+
+###Generate figures: UMAP and clustering with correlation heatmap
+
+```{r, out.width="30%", echo=FALSE}
+load(file.path(RDatadir,"umap.RData"))
+for(j in 1:ncol(anocol2))
+    {
+       if(class(annot_sel2[1,colnames(anocol2)[j]])=="numeric"){
+    plot((umap_res), col=alpha(anocol2[,j],0.3),pch=20,cex=0.6,
+         main=paste0(colnames(anocol2)[j]," min=",round(min(annot_sel2[,colnames(anocol2)[j]]),digits=3)," max=",round(max(annot_sel2[,colnames(anocol2)[j]]),digits=3)),
+         xlab="component 1",ylab="component 2")} else {
+  plot((umap_res), col=alpha(anocol2[,j],0.3),pch=20,cex=0.6,
+         main=paste0(colnames(anocol2)[j]),
+         xlab="component 1",ylab="component 2")
+         }
+  
+}
+
+for(j in 1:ncol(anocol2))
+    {
+    png(file.path(resSUBdir,paste0("UMAP_",colnames(anocol2)[j],".png")), height=1350,width=1200,res=300)
+  if(class(annot_sel2[1,colnames(anocol2)[j]])=="numeric"){
+    plot((umap_res), col=alpha(anocol2[,j],0.3),pch=20,cex=0.6,
+         main=paste0(colnames(anocol2)[j]," min=",round(min(annot_sel2[,colnames(anocol2)[j]]),digits=3)," max=",round(max(annot_sel2[,colnames(anocol2)[j]]),digits=3)),
+         xlab="component 1",ylab="component 2")} else {
+             plot((umap_res), col=alpha(anocol2[,j],0.3),pch=20,cex=0.6,
+         main=paste0(colnames(anocol2)[j]),
+         xlab="component 1",ylab="component 2")
+             if(colnames(anocol2)[j]=="sample_id"){
+                 #Plot persister with add plot since there is too low cell number
+                 pers = which(annot_sel2$sample_id=="HBCx95_persister_6souris")
+                 points(umap_res[pers,], col=alpha(anocol2[pers,j],0.5),pch=20,cex=0.6)
+                 
+             }
+         }
+  
+  
+    dev.off()
+    }
+
+# Subsample plot
+library(ChromSCape)
+dim(annot_sel2)
+scExp = create_scExp(LogCounts,annot_sel2[,1:4])
+gc()
+scExp = subsample_scExp(scExp,n_cells = 500)
+gc()
+umap_res_sub = umap_res[scExp$cell_id,]
+anocol2_sub = anocol2[scExp$cell_id,]
+annot_sel2_sub = annot_sel2[scExp$cell_id,]
+LogCounts_sub = LogCounts[,scExp$cell_id]
+gc()
+save(umap_res_sub,anocol2_sub,annot_sel2_sub,LogCounts_sub, file = file.path(RDatadir,"all_sub_500.RData"))
+resSUBdir_sub = file.path(resSUBdir,"sub500"); if(!dir.exists(resSUBdir_sub)) dir.create(resSUBdir_sub)
+for(j in 1:ncol(anocol2_sub))
+    {
+    png(file.path(resSUBdir_sub,paste0("UMAP_sub500_",colnames(anocol2_sub)[j],".png")), height=1350,width=1200,res=300)
+  if(class(annot_sel2_sub[1,colnames(anocol2_sub)[j]])=="numeric"){
+    plot((umap_res_sub), col=alpha(anocol2_sub[,j],0.3),pch=20,cex=0.6,
+         main=paste0(colnames(anocol2_sub)[j]," min=",round(min(annot_sel2_sub[,colnames(anocol2_sub)[j]]),digits=3)," max=",round(max(annot_sel2_sub[,colnames(anocol2_sub)[j]]),digits=3)),
+         xlab="component 1",ylab="component 2")} else {
+  plot((umap_res_sub), col=alpha(anocol2_sub[,j],0.3),pch=20,cex=0.6,
+         main=paste0(colnames(anocol2_sub)[j]),
+         xlab="component 1",ylab="component 2")
+         }
+  
+  
+    dev.off()
+}
+
+png(file.path(resSUBdir,"Clustering_correlation_matrix_PCA_all_annot.png"), height=1500,width=1500,res=300)
+geco.hclustAnnotHeatmapPlot(x=cor(mat.so.cor),
+                            hc=hc_PCA,
+                            hmColors=corColors,
+                            anocol=anocol2[hc_PCA$order,],#[,ncol(cc.col):1]
+                            xpos=c(0.15,0.9,0.164,0.885),
+                            ypos=c(0.1,0.5,0.5,0.6,0.62,0.95),
+                            dendro.cex=0.1,
+                            xlab.cex=0.2,
+                            hmRowNames=FALSE,
+                            hmRowNames.cex=0.01
+)
+dev.off()
+
+
+ClusterMembership <- as.data.frame.matrix(table(annot_sel2$sample_id,annot_sel2$louvain_partition))
+ClusterMembership$pvalue <- 0
+ClusterMembership$sample_id <- rownames(ClusterMembership)
+for(i in c(1:(dim(ClusterMembership)[1]))){
+ test <- chisq.test(ClusterMembership[c(i,6),c(1:5)]) 
+  ClusterMembership$pvalue[i] <- test$p.value
+}
+
+WriteXLS(ClusterMembership,file.path(resSUBdir,"ClusterMembership.xls"),row.names = T)
+ClusterMembership$sample_id <- rownames(ClusterMembership)
+ClusterMembership_b <- ClusterMembership[,-6] %>% pivot_longer(cols=c("C1","C2","C3","C4","C5"),names_to = "cluster",values_to = "freq") %>% dplyr::mutate(cluster=factor(cluster, levels =c("C3","C1","C2","C4","C5"))) %>% dplyr::mutate(sample_id=factor(sample_id, levels =c(as.character(corres$PDX[c(1,3,4,2,5,6)])))) %>% dplyr::group_by(sample_id) %>% dplyr::mutate(freq_prop=freq/sum(freq))
+png(file.path(resSUBdir,"ClusterMembership.png"),width=1000,height=1200,res=300)
+ggplot(ClusterMembership_b) +geom_col(aes(y=freq_prop,x=sample_id,fill=cluster),width = 0.75) + scale_fill_manual(values=as.character(corres_cluster$color[c(3,1,2,4,5)])) + theme_classic() +theme(axis.text.x=element_blank(),axis.title = element_blank(), legend.position = "None")
+dev.off()
+gc()
+```
+
+```{r , out.width="30%",include=FALSE}
+# Sample intracorrelation
+
+control <- c("#E0E0E0","#BDBDBD","#757575")
+persister_color <- c("#DCEDC8","#9CCC65","#4CAF50","#009688")
+treated_UNC_color <- c("#2196F3", "#4DD0E1" )
+treated_GSKJ4_color <- c("#C2185B", "#EC407A" )
+res_color <- c("#FFEB3B","#FFC107","#FF9800","#FF5722")
+color_PDX <- c(control[c(1,2)],persister_color[c(1,3)],res_color[c(2)],"#ffcbcb")
+
+corres <- data.frame(PDX=c("HBCx95_v3_UNT","HBCx95_m9_50_REC","HBCx95_persister_2souris","HBCx95_persister_6souris","HBCx95_m30_CAPAR","HBCx95_m6_CAPAS"),color=color_PDX)
+
+intra_corr=data.frame()
+for(i in unique(annot_sel2$sample_id)){
+    cells = annot_sel2$cell_id[which(annot_sel2$sample_id==i)]
+    tmp = cor_mat[cells,cells]
+    tab = data.frame("sample_id" = rep(i,ncol(tmp)), "intra_corr" = colMeans(tmp))
+    intra_corr=rbind(intra_corr,tab)
+}
+
+intra_corr$sample_id = factor(intra_corr$sample_id, levels =c("HBCx95_v3_UNT","HBCx95_m9_50_REC","HBCx95_persister_6souris","HBCx95_persister_2souris","HBCx95_m6_CAPAS","HBCx95_m30_CAPAR"))
+png(file.path(resSUBdir,paste0("Sample_intracorrelation_violin.png")),height=1000,width=1000,res=300)
+ggplot(intra_corr,aes(x=sample_id,y=intra_corr, fill=sample_id)) + 
+  geom_violin(alpha=0.8) + theme_classic() + scale_fill_manual(values=as.character(corres$color)[c(1,2,4,3,6,5)]) +
+  stat_summary(fun=median, geom="point", size=2, color="black") + theme(axis.text.x = element_text(angle=90))
+dev.off()
+```
+###Study cell cycle in every sample
+
+```{r , out.width="30%",include=FALSE}
+#Association of cell cycle to samples
+library(tidyverse)
+CellCycle <- as.data.frame.matrix(table(annot_sel2$sample_id,annot_sel2$cell_cycle))
+CellCycle$pvalue <- 0
+for(i in c(1:(dim(CellCycle)[1]))){
+ test <- chisq.test(CellCycle[c(i,6),c(1:3)]) 
+  CellCycle$pvalue[i] <- test$p.value
+}
+
+WriteXLS(CellCycle,file.path(resSUBdir,"CellCycle_samples_vs_UNT.xls"),row.names = T)
+CellCycle$sample <- rownames(CellCycle)
+CellCycle_b <- CellCycle[,-4] %>% pivot_longer(cols=c("G1","G2M","S"),names_to = "cycle",values_to = "freq") %>% dplyr::mutate(cycle=factor(cycle, levels =c("G1","G2M","S"))) %>% dplyr::group_by(sample) %>% dplyr::mutate(freq_prop=freq/sum(freq))
+png(file.path(resSUBdir,"CellCycle.png"),width=1000,height=1000,res=300)
+ggplot(CellCycle_b) +geom_col(aes(y=freq_prop,x=sample,fill=cycle)) + 
+    scale_fill_manual(values=as.character(corres_cell_cycle$color)) + 
+    theme_classic() +theme(axis.text.x=element_text(angle=90, hjust=1)) +
+    theme(text=element_blank()) # if no legend
+dev.off()
+
+```
+
+## Run differential analysis
+
+```{r , out.width="30%",include=FALSE}
+# save(RawCounts,feature,file="Unsupervised/RData/RawCounts_features.RData")
+
+resdir_supervised=file.path(resdir,"Supervised"); if(!dir.exists(resdir_supervised)) dir.create(resdir_supervised)
+tabdir <- file.path(resdir_supervised,"Tables");if(!file.exists(tabdir)){dir.create(tabdir)}
+plotdir <- file.path(resdir_supervised,"Plots");if(!file.exists(plotdir)){dir.create(plotdir)}
+EnrichDir <- file.path(tabdir,"Gene_set_analysis");if(!file.exists(EnrichDir)){dir.create(EnrichDir)}
+RDataSupdir <-  file.path(resdir_supervised,"RData");if(!file.exists(RDataSupdir)){dir.create(RDataSupdir)}
+
+load("Unsupervised/RData/RawCounts_features.RData")
+load(file.path(RDatadir,"all_sub_500.RData"))
+RawCounts_sub = RawCounts[,annot_sel2_sub$cell_id]
+gc()
+
+metadata = annot_sel2_sub
+##raw counts for edgeR
+# RawCounts <- Signal[,metadata$cell_id]
+# feature <- gene_metadata
+
+#Get the gene list of Persister cells (6souris) overexpressed
+mygps <- list(
+
+'persister_vs_UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_persister_6souris","HBCx95_persister_2souris") ),"cell_id"],
+'persister_vs_all'=metadata[which(metadata$sample_id %in% c("HBCx95_persister_6souris","HBCx95_persister_2souris") ),"cell_id"],
+'persister_6_vs_UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_persister_6souris") ),"cell_id"]
+)
+sapply(mygps,length)
+
+myrefs <- list(
+    'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_v3_UNT") ),"cell_id"],
+    'all'=metadata[which(!metadata$sample_id %in% c("HBCx95_persister_6souris","HBCx95_persister_2souris")  ),"cell_id"],
+    'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_v3_UNT") ),"cell_id"]
+    
+)
+sapply(myrefs,length)
+
+refs <- names(myrefs) 
+groups <- names(mygps) 
+
+FC_threshold <- 2
+Signif_threshold <- 0.01
+algoType <- c("edgeR") ## Limma or DESeq or a vector of both or edgeR for single-cell
+useBlockFactor <- FALSE ## TRUE or FALSE
+#BlockFactor <- "Sex"
+
+my.res <- geco.CompareedgeRGLM (dataMat=RawCounts_sub,
+                                  annot=metadata,
+                                  ref=myrefs,
+                                  groups=mygps,
+                                  featureTab=feature
+  )
+  
+  
+under_res = my.res %>% dplyr::filter(log2FC.persister_6_vs_UNT < -FC_threshold & qval.persister_6_vs_UNT < Signif_threshold) %>% 
+    dplyr::arrange(qval.persister_6_vs_UNT) %>% select(Symbol,log2FC.persister_6_vs_UNT,qval.persister_6_vs_UNT)
+  over_res = my.res %>% dplyr::filter(log2FC.persister_6_vs_UNT > FC_threshold & qval.persister_6_vs_UNT < Signif_threshold) %>% 
+    dplyr::arrange(qval.persister_6_vs_UNT) %>% dplyr::select(Symbol,log2FC.persister_6_vs_UNT,qval.persister_6_vs_UNT)
+  
+  WriteXLS(c("over_res","under_res","my.res"), ExcelFileName =   file.path(tabdir,"Differential_analysis_Limma.xlsx"), SheetNames = c(paste0("Over_",FC_threshold,"_",Signif_threshold,"_n",nrow(over_res)),paste0("Under_-",FC_threshold,"_",Signif_threshold,"_n",nrow(under_res)),"All"), perl = "perl", verbose = FALSE, row.names = FALSE, col.names = TRUE, AdjWidth = T, AutoFilter = TRUE, BoldHeaderRow = TRUE, na = "", FreezeRow = 1, FreezeCol = 1)
+  
+  
+  
+  summaryTab <- geco.summaryCompareedgeR(restab=my.res,
+                                         ref=myrefs,
+                                         groups=mygps,
+                                         qval.th=Signif_threshold,
+                                         fc.th=FC_threshold,
+                                         plotdir=plotdir
+  )
+  
+  summaryTab <- data.frame("."=row.names(summaryTab), summaryTab, check.names=FALSE)		
+  write.table(summaryTab, file.path(tabdir,"Number_differentially_expressed_genes_per_group.csv"),row.names=F,quote=F,sep=";"  )
+  print("summaryedgeRCompare Done")
+```
+
+###Generate heatmaps with gene lists 
+
+```{r , out.width="30%",include=FALSE}
+#import my.res et gene lists from diff analysis, logCounts, take top 10
+MSigDBFile1 <- "/media/pprompsy/LaCie/InstitutCurie/Documents/GitLab/ChromSCape_devel/data/hg38.MSIG.gs.rda" 
+MSigDBFile2 <- "/media/pprompsy/LaCie/InstitutCurie/Documents/GitLab/ChromSCape_devel/data/hg38.MSIG.ls.rda"
+load(file=file.path(RDataSupdir,paste("Supervised_res_object_edgeR.Rdata",sep="")))
+load(MSigDBFile1)
+load(MSigDBFile2)
+MSIG.ls = hg38.MSIG.ls
+MSIG.gs = hg38.MSIG.gs
+
+rownames(my.res) <- my.res$Gene
+
+annotbase <- "MSigDB" 
+database <- MSIG.ls ##MSigDB
+
+Overexpressed  <- Underexpressed <- data.frame()
+
+reflist <- unique(my.res$Symbol);length(reflist)
+
+for(i in 1:length(groups)) 	{
+    gp <- groups[i]
+    if (length(refs)>1) {ref <- refs[i]} else {ref <- refs[1]}
+    print(paste0("Processing ",gp, " vs ", ref, " _ ",annotbase ))
+    
+    signific <- which(my.res[,paste("qval",gp,sep=".")] <= Signif_threshold & abs(my.res[,paste("log2FC",gp,sep=".")]) > FC_threshold)
+    over <- which(my.res[,paste("qval",gp,sep=".")] <= Signif_threshold & my.res[,paste("log2FC",gp,sep=".")] > FC_threshold)
+    under <- which(my.res[,paste("qval",gp,sep=".")] <= Signif_threshold & my.res[,paste("log2FC",gp,sep=".")] < -FC_threshold)
+    print(paste0("significant = ", length(signific))) ; print(paste0("over = ", length(over))) ; print(paste0("under = ", length(under)))
+    
+    
+    if(length(over)){
+        enrich.test <- geco.enrichmentTest(gene.sets=database,mylist=my.res$Symbol[over],possibleIds=reflist)
+        enrich.test <- data.frame(Gene_set_name=rownames(enrich.test), enrich.test, check.names=FALSE)
+        enrich.test <- merge( subset(MSIG.gs, select=-Genes), enrich.test, by.x="Gene.Set", by.y="Gene_set_name", all.y=TRUE, sort=FALSE ) ## Get class of gene set
+        
+        enrich.test <- enrich.test[order(enrich.test$`p-value`),]
+        ind <- which(enrich.test$`q-value`<= 0.1);if(!length(ind)){ind <- 1:20}
+        Overexpressed  <- enrich.test[ind,]
+      png(file.path(EnrichDir,paste0(groups[i],"_vs_",ref,"_qval",Signif_threshold,"_logFC",FC_threshold,"_enriched_peaks_enrichment.png")), height=1000,width=1000,res=150)
+      par(mar = c(13, 4, 2, 2) + 1)
+      barplot(-log10(enrich.test$`q-value`[1:10]),las=2,names.arg = enrich.test$Gene.Set[1:10],cex.names = 0.5,ylab="-log10 q-value",main=paste0("Top 10 gene list of ",length(ind)," lists"))
+      dev.off()
+        }
+    
+    if(length(under)){
+        enrich.test <- geco.enrichmentTest(gene.sets=database,mylist=my.res$Symbol[under],possibleIds=reflist)
+        enrich.test <- data.frame(Gene_set_name=rownames(enrich.test), enrich.test, check.names=FALSE)
+        enrich.test <- merge( subset(MSIG.gs, select=-Genes), enrich.test, by.x="Gene.Set", by.y="Gene_set_name", all.y=TRUE, sort=FALSE ) ## Get class of gene set
+        
+        enrich.test <- enrich.test[order(enrich.test$`p-value`),]
+        ind <- which(enrich.test$`q-value`<= 0.1);if(!length(ind)){ind <- 1:20}
+        Underexpressed <- enrich.test[ind,]		}
+    
+    WriteXLS(c("Overexpressed", "Underexpressed"), ExcelFileName = file.path(EnrichDir,paste0("Enrichment_test_",gp,"_vs_",ref,"_",annotbase,".xlsx")), SheetNames = c( paste0("Overexp_in_", gp), paste0("Underexp_in_", gp) ), perl = "perl", verbose = FALSE, row.names = FALSE, col.names = TRUE, AdjWidth = TRUE, AutoFilter = TRUE, BoldHeaderRow = TRUE, na = "", FreezeRow = 1, FreezeCol = 1)
+} 		
+```
+
+### Heatmap for a gene list of interest
+```{r , out.width="30%",include=FALSE}
+mat <- LogCounts[rownames(LogCounts) %in% KEGG_TGFB_FC2,]
+tmat <- t(mat)
+
+distHC <- c("distPearson","distCosine","euclidean","maximum","manhattan","canberra","binary","minkowski")[3]
+methHC <- c("ward","ward.D","ward.D2","single","complete","average")[3]
+if(distHC=="distPearson")	d <- distPearson(tmat)
+if(distHC=="distCosine")	d <- distCosine(tmat)
+if(distHC %in% c("euclidean","maximum","manhattan","canberra","binary","minkowski"))	
+d <- dist(tmat,distHC)
+hc <- hclust(d,method=methHC)
+
+mat.so <- as.matrix(mat[,hc$order])
+
+if(chRangeHM){
+  for(i in 1:nrow(mat.so)){
+    mat.so[i,] <- geco.changeRange(mat.so[i,],newmin=0,newmax=1)
+  }
+}
+
+png(file.path(resSUBdir,paste0("Clustering_TGFB_","_",distHC,"_",methHC,".png")), height=4000,width=4000,res=300)
+
+geco.hclustAnnotHeatmapPlot(x=(mat.so),
+                            hc=hc,
+                            hmColors=hmColors,
+                            anocol=anocol2[hc$order,c(1:5)],#[,ncol(cc.col):1]
+                            xpos=c(0.15,0.9,0.164,0.885),
+                            ypos=c(0.1,0.5,0.5,0.6,0.62,0.95),
+                            dendro.cex=0.01,
+                            xlab.cex=1,
+                            hmRowNames=TRUE,
+                            hmRowNames.cex=0.5
+)
+dev.off()
+
+```
+
+
+###Study the top gene lists of persister cells
+```{r , out.width="30%",include=FALSE}
+
+library(gplots)
+
+load(file=file.path(RDatadir,"Enrichment_Overexpressed_persister_6_vs_UNT.RData"))
+load(file=file.path(RDatadir,"LogCounts.RData"))
+load(file=file.path(RDatadir,"RawCounts_features.RData"))
+gene_metadata = feature
+  how_many_top <- 20
+		significPathway <- Overexpressed[Overexpressed$Class %in% c("c2_curated","c6_oncogenic","hallmark"),]
+
+	significPathway <- significPathway[1:how_many_top,]
+	significPathway_breast <- 	significPathway[grep(pattern = "BREAST", significPathway$Gene.Set),]
+
+			
+	#Calculate average expression for every cells on genes of each top pathways
+	pathway_mat <- matrix(0,nrow=how_many_top,ncol=length(annot_sel2$sample_id))		
+	pathway_names <- c()		
+	for(i in 1:how_many_top){
+	  gene_list <- unlist(strsplit(significPathway$Deregulated_genes[i],";"))
+	  mat <- LogCounts[gene_metadata$Symbol %in% gene_list,]
+	  pathway_mat[i,] <- apply(mat,2,mean) 
+	  pathway_names[i] <-significPathway$Gene.Set[i]
+	}		
+  
+row.names(pathway_mat) <- pathway_names
+tmat <- t(pathway_mat)
+
+selected_cells = annot_sel2$cell_id[which(annot_sel2$louvain_partition %in% c("C1","C5"))]
+rownames(tmat) = colnames(LogCounts)
+tmat = tmat[selected_cells,]
+distHC <- c("distPearson","distCosine","euclidean","maximum","manhattan","canberra","binary","minkowski")[3]
+methHC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
+if(distHC=="distPearson")	d <- distPearson(tmat)
+if(distHC=="distCosine")	d <- distCosine(tmat)
+if(distHC %in% c("euclidean","maximum","manhattan","canberra","binary","minkowski"))	d <- dist(tmat,distHC)
+hc <- hclust(d,method=methHC)
+mat.so <- pathway_mat[,hc$order]
+ 
+if(chRangeHM){
+	for(i in 1:nrow(mat.so)){
+		mat.so[i,] <- geco.changeRange(mat.so[i,],newmin=0,newmax=1)
+	}
+}
+rowClust <- hclust(as.dist(1 - cor(t(mat.so))), method = "ward.D")
+
+png(file.path(resSUBdir,paste0("Clustering_Pathways_Persisters_homemade_",distHC,"_",methHC,".png")), height=1000,width=1000,res=150)
+geco.hclustAnnotHeatmapPlot(x=(mat.so[rowClust$order,]),
+							 hc=hc,
+							 hmColors=hmColors,
+							 anocol=anocol2[hc$order,c(1,8)],#[,ncol(cc.col):1]
+							 xpos=c(0.15,0.9,0.164,0.885),
+							 ypos=c(0.1,0.5,0.5,0.6,0.62,0.95),
+							 dendro.cex=0.1,
+							 xlab.cex=0.6,
+							 hmRowNames=TRUE,
+							 hmRowNames.cex=0.5
+							 )
+dev.off()
+nclust <- 5
+annot_sel2$clust_heatmap <- paste("C",match(cutree(hc,nclust),unique(cutree(hc,nclust)[hc$order])),sep="")
+pdf(file.path(resSUBdir,"Clustering_Pathways_Persisters.pdf"))
+heatmap.2(pathway_mat,ColSideColors=anocol2[,1],trace="none")
+dev.off()
+
+```
