@@ -6,22 +6,18 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-
 knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries}
 library(devtools)
-#library(BiocInstaller)
-#library(pheatmap)
-#library(limma)
-#library(Matrix)
 library(dplyr)
 library(DropletUtils)
 library(irlba)
 library(corrplot)
-library(geco.utils)
-library(geco.visu)
 library(ConsensusClusterPlus)
 library(geco.unsupervised)
-#library(heatmap.plus)
 library(scatterplot3d)
 library(scater)
 library(Rtsne)
@@ -32,49 +28,46 @@ library(viridis)
 library(colorRamps)
 library(RColorBrewer)
 library(scTools)
-
-library(geco.supervised);  library(edgeR); library(ggplot2); library(rgl); library(RColorBrewer); library(genefilter); library(xtable); library(geco.RNAseq); library(WriteXLS); library(data.table); library(stringr); library(limma); library(edgeR)
-
-library(scTools)
+library(edgeR)
+library(ggplot2)
+library(rgl)
+library(RColorBrewer)
+library(genefilter)
+library(xtable)*
+library(WriteXLS)
+library(data.table)
+library(stringr)
+library(limma)
+library(edgeR)
 library(monocle3)
 library(dplyr)
 library(WriteXLS)
 
-QCdir <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/QC"
-resdir <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/Results_PDX/"
+#Geco packages
+library(geco.supervised)
+library(geco.RNAseq)
+library(geco.utils)
+library(geco.visu)
+library(scTools)
+```
+
+
+```{r paths}
+#Global variables
+source(file.path("../../global_var.R"))
+
+resdir <- file.path(working_directory,"output","scRNAseq","PDX")
+QCdir <- file.path(resdir,"QC")
 resSUBdir <- file.path(resdir, paste0("Unsupervised")) ; if(!file.exists(resSUBdir)){dir.create(resSUBdir)}
 RDatadir <- file.path(resSUBdir,"RData") ; if(!file.exists(RDatadir)){dir.create(RDatadir)}
+```
 
-################################################################################
-# Parameters --------------------------------------------------------------
-################################################################################
-
-## packages Seurat or scater attach an enormous amount of bystander packages, they cannot be loaded in the same session without crashing the DLLs.
-##Hierarchical clustering
-distHC <- c("distPearson","distCosine","euclidean","maximum","manhattan","canberra","binary","minkowski")[1]
-methHC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
-
-##ConsClust
-repsCC <- 1000
-pItemCC <- 0.8
-pFeatureCC <- 1
-clusterAlgCC <- c("hc","pam","km","kmdist")[1]
-distCC <- c("pearson","distCosine","euclidean","manhattan")[1]
-innerLinkageCC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
-finalLinkageCC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
-
-## Heatmap
-chRangeHM <-TRUE # Should be set to TRUE for expression data, FALSE for methylation data
-hmColors <- colorRampPalette(c("royalblue","white","indianred1"))(256)
-corColors <- colorRampPalette(c("royalblue1","white","indianred1"))(256)
-
-# setwd(RDatadir)
+```{r loads}
 load(file.path(RDatadir,"HBCx95.RData"))
 load(file.path(RDatadir,"pca.RData")) #if starting from prior analysis
 load(file.path(RDatadir,"annot_anocol_final.RData"))#if starting from prior analysis
 load(file.path(RDatadir,"umap.RData"))#if starting from prior analysis
 annotationDatabases <- c("MSigDB") # "KEGG" or "GO" or "KEGG_GO" or "MSigDB"
-
 ```
 
 We can start from already performed analysis to make figures.
@@ -89,9 +82,7 @@ Here we use CellCycleScoring function to annotate cells with a cell cycle phase.
 By the way we perform as a comparison PCA and UMAP reduction using Seurat. The main difference with our prior analysis is that Seurat performs PCA solely on the most varying genes (n=2000) and not the entire dataset. The segragation of cells seems less efficient in 2-D space then with all genes.
 
 ```{r, echo=FALSE}
-
 library(Seurat)
-
 # A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can
 # segregate this list into markers of G2/M phase and markers of S phase
 s.genes <- cc.genes$s.genes
@@ -116,26 +107,15 @@ marrow <- RunUMAP(marrow, dims = 1:20)
 DimPlot(marrow, reduction = "umap")
 
 marrow <- CellCycleScoring(marrow, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
-# RidgePlot(marrow, features = c("PCNA", "TOP2A", "MCM6", "MKI67"), ncol = 2)
-# marrow <- RunPCA(marrow, features = c(s.genes, g2m.genes))
-# DimPlot(marrow)
-# DimHeatmap(marrow, dims = 1:3, cells = 1000, balanced = TRUE)
-
-# pca_object <- marrow[['pca']]@cell.embeddings
-# umap_res <- marrow[['umap']]@cell.embeddings
-
 annot_seurat <- data.frame (Seurat_cluster=paste0("C",marrow$seurat_clusters),cell_cycle=marrow$Phase)
 annot_seurat$cell_id <- rownames(annot_seurat)
 if(all.equal(rownames(annot_sel),rownames(annot_seurat))) annot_sel2 <- cbind(annot_sel,annot_seurat) else print("ERROR")
 
-# FeaturePlot(marrow, features = c("KDM6B", "MGP","IGFBP3","KRT6A","KRT14"))
+FeaturePlot(marrow, features = c("KDM6B", "MGP","IGFBP3","KRT6A","KRT14"))
 annotCol <- c("sample_id","total_features","Seurat_cluster","cell_cycle")
 pcaText <- FALSE
 annotText <- "sample_id"
 hcText <- "sample_id"  
-
-# anocol <- geco.annotToCol3(annotS=annot_sel2[,annotCol],annotT=annot_sel2,plotLegend=T,plotLegendFile=file.path(resSUBdir,"Annotation_legends.pdf"), categCol=NULL)
-
 rm(marrow); gc()
 
 ```
@@ -143,38 +123,39 @@ rm(marrow); gc()
 ###Study cells with PCA, UMAP & hierarchical clustering
 
 ```{r, echo=FALSE}
-
-rownames(Signal) <- gene_metadata$Symbol
-rownames(annot_sel2) <- annot_sel2$cell_id
-rownames(gene_metadata) <- gene_metadata$Symbol
-cds <- new_cell_data_set(Signal[,rownames(annot_sel2)],
-                         cell_metadata = annot_sel2,
-                         gene_metadata  = gene_metadata)
-rm(Signal);gc()
-cds <- preprocess_cds(cds,method='PCA', norm_method='size_only',num_dim=50)
-
-cds <- reduce_dimension(cds, reduction_method = 'UMAP')
-cds <-  cluster_cells(cds)
-
-annot_sel2$louvain_cluster <- cds@clusters[[1]]$clusters
-annot_sel2$louvain_cluster <- paste0("C",annot_sel2$louvain_partition)
-
-annot_sel2$louvain_partition <- cds@clusters[[1]]$partition
-annot_sel2$louvain_partition <- paste0("C",annot_sel2$louvain_partition)
-
-umap_res <- cds@reducedDims$UMAP # with R3.6.2 and higher for SummarizedExperiment, otherwise cds@reducedDims[[2]]
-pca_object <- cds@reducedDims$PCA
-
-save(umap_res,file=file.path(RDatadir,"umap.RData"))
-save(pca_object,file=file.path(RDatadir,"pca.RData"))
-
-NormCounts <- t(t(exprs(cds)) /  pData(cds)[, 'Size_Factor']) #keep format sparse matrix, need to have row and colnames separate
-LogCounts <- log(NormCounts+1,2)
-
-save(NormCounts,file=file.path(RDatadir,"NormCounts.RData"))
-save(LogCounts,file=file.path(RDatadir,"LogCounts.RData"))
-rm(NormCounts); gc()
-rm(cds); gc()
+if(!(file.exists(file.path(RDatadir,"NormCounts.RData")) & file.exists(file.path(RDatadir,"LogCounts.RData")))){
+    rownames(Signal) <- gene_metadata$Symbol
+    rownames(annot_sel2) <- annot_sel2$cell_id
+    rownames(gene_metadata) <- gene_metadata$Symbol
+    cds <- new_cell_data_set(Signal[,rownames(annot_sel2)],
+                             cell_metadata = annot_sel2,
+                             gene_metadata  = gene_metadata)
+    rm(Signal);gc()
+    cds <- preprocess_cds(cds,method='PCA', norm_method='size_only',num_dim=50)
+    
+    cds <- reduce_dimension(cds, reduction_method = 'UMAP')
+    cds <-  cluster_cells(cds)
+    
+    annot_sel2$louvain_cluster <- cds@clusters[[1]]$clusters
+    annot_sel2$louvain_cluster <- paste0("C",annot_sel2$louvain_partition)
+    
+    annot_sel2$louvain_partition <- cds@clusters[[1]]$partition
+    annot_sel2$louvain_partition <- paste0("C",annot_sel2$louvain_partition)
+    
+    umap_res <- cds@reducedDims$UMAP # with R3.6.2 and higher for SummarizedExperiment, otherwise cds@reducedDims[[2]]
+    pca_object <- cds@reducedDims$PCA
+    
+    save(umap_res,file=file.path(RDatadir,"umap.RData"))
+    save(pca_object,file=file.path(RDatadir,"pca.RData"))
+    
+    NormCounts <- t(t(exprs(cds)) /  pData(cds)[, 'Size_Factor']) #keep format sparse matrix, need to have row and colnames separate
+    LogCounts <- log(NormCounts+1,2)
+    
+    save(NormCounts,file=file.path(RDatadir,"NormCounts.RData"))
+    save(LogCounts,file=file.path(RDatadir,"LogCounts.RData"))
+    rm(NormCounts); gc()
+    rm(cds); gc()
+}
 ```
 
 
@@ -190,33 +171,13 @@ nclust <- 6
 annot_sel2$clustCol6 <- paste("C",match(cutree(hc_PCA,nclust),unique(cutree(hc_PCA,nclust)[hc_PCA$order])),sep="")
 nclust <- 4
 annot_sel2$clustCol4 <- paste("C",match(cutree(hc_PCA,nclust),unique(cutree(hc_PCA,nclust)[hc_PCA$order])),sep="")
-
-##Association of annotation to partition
-# annotCol2 <- c("sample_id","total_features","cell_cycle","rRNA","MKI67","KRT14","NNMT")
-# 
-# maxKHC <- 15
-# for(k in 2:maxKHC)
-# {
-# 	if(k==2){pval <- geco.groupsVSannot(groups=cutree(hc_PCA,k),annotS=annot_sel2[,annotCol2],annotT=annot_sel2)$pval[,c("anotype","pval")]}else{
-# 		pval <- data.frame(pval,geco.groupsVSannot(groups=cutree(hc_PCA,k),annotS=annot_sel2[,annotCol2],annotT=annot_sel2)$pval[,"pval"])
-# 	}
-# }
-# colnames(pval)[-1] <- paste("k",2:maxKHC,sep="")
-# pval <- data.frame(Annot=rownames(pval), pval)
-# WriteXLS(pval,file.path(resSUBdir,"Hierarchical_clustering_vs_annot.xls"),row.names = T)
-# 
-# 
-# pdf(file.path(resSUBdir,"Hierarchical_clustering_vs_annot.pdf"))
-# par(mai=c(1,2,1,1))
-# geco.imagePval(t(pval[,-1]),xlab.cex=1,ylab.cex=1)
-# dev.off()
 ```
 
 ```{r, echo=FALSE}
 load(file.path(RDatadir,"LogCounts.RData"))
 load(file.path(RDatadir,"annot_anocol_final.RData"))
 
-diff_genes <-  c("NNMT","TAGLN","INHBA","KRT6A","KRT6B","KRT16","KRT14","KLK10","KLK5","KLK7")
+diff_genes <-  c("KRT17", "INHBB", "KRT5","KRT8","NNMT","TAGLN","INHBA","KRT6A","KRT6B","KRT16","KRT14","KLK10","KLK5","KLK7")
 diff_genes_figures <-  c("BMP6","CDKN2B","TGFBR2","TGFBR3","TGFB2","INHBA","INHBB","SMAD2","TGFB1","FOSL1","NNMT","KRT14","KLK10","KLK5","TAGLN","NNMT","ELN","TGFBR3","MIF")
 hallmark_EMT <- c("FN1","TAGLN","NNMT","ELN","INHBA","MYL9","FBLN2","TGFBR3","CRLF1")
 
@@ -238,18 +199,13 @@ MYB_targets <- c("HSPB1","MAP1LC3B","S100A7","CDKN1A","HMOX1","SERPINB2","RRAD",
 
 SMID_LUMINAL_DN <- c("ALDH1A3","NNMT","ID4","KYNU","KRT6A","NOV","KRT23","DSC3","TNFRSF11B","CLIC3","IL8","ANXA1","ANXA3","BIRC3","TMEM45A","KLK7","DSC2","KRT17","ADM","KLK6","KLK10","ID1","KRT16","S100A7","KRT14","TAGLN","PERP")
 
-
-#annotCol <- c("sample_id","total_features","cell_cycle","rRNA","clustCol10","MKI67",diff_genes)
 annotCol <- c("sample_id","total_features","cell_cycle","rRNA","clustCol4","clustCol5","clustCol6","louvain_partition",
               "louvain_cluster","Seurat_cluster",
               "MKI67","KEGG_TGFB_FC1","KEGG_TGFB_FC2",diff_genes_figures,"TGF_pathway","hallmark_EMT","MYB_targets",
               "hallmark_TNFA")
 
-# annotCol <- c("sample_id","louvain_partition","total_features","clustCol10","cell_cycle","hallmark_EMT","hallmark_IFN","KRT_signature","hallmark_apoptosis","hallmark_TNFA","NRG1_signalling","MYB_targets","SMID_LUMINAL_DN","TMEM45A","INHBA","TAGLN","NNMT","KRT6A","KRT6B","KRT14","KRT16","KLK10","IL6","MKI67","ARID5B","JUND","KRT17","JUN","FOSL1","AQP3","KLK5","KDM6A","KDM6B","EZH2","CDH1")
-
 pcaText <- FALSE
 annotText <- "sample_id"
-#hcText <- "sample_id"  
 
 genes <- c("KEGG_TGFB_FC1","KEGG_TGFB_FC2","TGF_pathway","hallmark_EMT","hallmark_apoptosis","hallmark_TNFA","NRG1_signalling","MYB_targets","SMID_LUMINAL_DN")
 
@@ -258,55 +214,22 @@ genelist <- get(genes[i])
 annot_sel2$test <- apply(LogCounts[genelist,],2,mean)
 colnames(annot_sel2)[dim(annot_sel2)[2]] <- genes[i]
 }
+for(i in annotCol){
+    if(i %in% rownames(LogCounts)) annot_sel2[,i] <- LogCounts[which(rownames(LogCounts)==i),]; gc()
+}
 
-annot_sel2$ELN <- LogCounts["ELN",]; gc()
-#TGFB
-annot_sel2$SMAD2 <- LogCounts["SMAD2",]; gc()
-annot_sel2$TGFB2 <- LogCounts["TGFB2",]; gc()
-annot_sel2$TGFBR3 <- LogCounts["TGFBR3",]; gc()
-annot_sel2$INHBB <- LogCounts["INHBB",]; gc()
-annot_sel2$INHBA <- LogCounts["INHBA",]; gc()
-annot_sel2$TGFBR2 <- LogCounts["TGFBR2",]; gc()
-annot_sel2$TGFB1 <- LogCounts["TGFB1",]; gc()
-annot_sel2$CDKN2B <- LogCounts["CDKN2B",]; gc()
-annot_sel2$BMP6 <- LogCounts["BMP6",]; gc()
+load(file.path(working_directory,"output","scRNAseq","common_overexpressed_genes_pers_vs_unt.RData"))
 
-annot_sel2$ARID5B <- LogCounts["ARID5B",]; gc()
-annot_sel2$JUN <- LogCounts["JUN",]; gc()
-annot_sel2$FOSL1 <- LogCounts["FOSL1",]; gc()
-annot_sel2$AQP3 <- LogCounts["AQP3",]; gc()
-annot_sel2$EZH2 <- LogCounts["EZH2",]; gc()
-annot_sel2$KDM6A <- LogCounts["KDM6A",]; gc()
-annot_sel2$KDM6B <- LogCounts["KDM6B",]; gc()
-annot_sel2$CDH1 <- LogCounts["CDH1",]; gc()
-
-annot_sel2$KRT17 <- LogCounts["KRT17",]; gc()
-
-annot_sel2$MKI67 <- LogCounts["MKI67",]; gc()
-annot_sel2$KRT14 <- LogCounts["KRT14",]; gc()
-annot_sel2$KRT6A <- LogCounts["KRT6A",]; gc()
-annot_sel2$KRT6B <- LogCounts["KRT6B",]; gc()
-annot_sel2$KRT16 <- LogCounts["KRT16",]; gc()
-annot_sel2$KLK10 <- LogCounts["KLK10",]; gc()
-annot_sel2$KLK5 <- LogCounts["KLK5",]; gc()
-
-annot_sel2$TMEM45A <- LogCounts["TMEM45A",]; gc()
-annot_sel2$NNMT <- LogCounts["NNMT",]; gc()
-annot_sel2$INHBA <- LogCounts["INHBA",]; gc()
-annot_sel2$TAGLN <- LogCounts["TAGLN",]; gc()
-annot_sel2$MIF <- LogCounts["MIF",]; gc()
-
-load("../common_over_genes_pers_vs_unt.RData")
-for(i in common_over_genes){
+for(i in common_overexpressed_genes){
   annot_sel2[,i] = LogCounts[i,annot_sel2$cell_id]
 }
-annotCol = unique(c(annotCol, common_over_genes))
+annotCol = unique(c(annotCol, common_overexpressed_genes))
 
 ribo <- grepl("^RP[SL]",gene_metadata$Symbol)
 annot_sel2$rRNA <- apply(LogCounts[ribo,],2,mean)
 
 library(geco.unsupervised)
-anocol2 <- geco.unsupervised::geco.annotToCol4(annotS=annot_sel2[,annotCol],annotT=annot_sel2,plotLegend=T,plotLegendFile=file.path(resSUBdir,"Annotation_legends.pdf"),scale_q = "inferno")
+anocol2 <- geco.annotToCol4(annotS=annot_sel2[,annotCol],annotT=annot_sel2,plotLegend=T,plotLegendFile=file.path(resSUBdir,"Annotation_legends.pdf"),scale_q = "inferno")
 
 
 #Common palette for all MM468 experiments

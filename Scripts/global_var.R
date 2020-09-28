@@ -1,5 +1,7 @@
 #Global environment variable
 
+working_directory = "/media/pacome/LaCie/InstitutCurie/Documents/GitLab/ChemoPersistance/"
+
 pcaText <- TRUE
 annotText <- "Sample"
 hcText <- "Name"  ## column used in hierarchical clustering # change names from Sample_x to actual sample name
@@ -27,3 +29,4 @@ corColors <- colorRampPalette(c("indianred","white","forestgreen"))(256)
 #metadataFile <- file.path(ProjectDir, "Scripts", expType, paste0("metadata_",expType,"_", annoType, ".txt") )
 maxKHC <- 10
 maxKCC <- 10
+
