@@ -1,38 +1,25 @@
-
 ##############################################################################################
 ###############			LIBRARIES AND FUNCTIONS					##############################
 ##############################################################################################
 options(stringsAsFactors=FALSE, width=180)
 organism <- "hg38"
 GencodeVersion <- ""
-chRangeHM=T
-distHC <- c("distPearson","distCosine","euclidean","maximum","manhattan","canberra","binary","minkowski")[1]
-methHC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
 
-##ConsClust
-repsCC <- 1000
-pItemCC <- 0.8
-pFeatureCC <- 1
-clusterAlgCC <- c("hc","pam","km","kmdist")[1]
-distCC <- c("pearson","distCosine","euclidean","manhattan")[1]
-innerLinkageCC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
-finalLinkageCC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
-
-## Heatmap
-chRangeHM <-TRUE # Should be set to TRUE for expression data, FALSE for methylation data
-hmColors <- colorRampPalette(c("royalblue","white","indianred1"))(256)
-corColors <- colorRampPalette(c("royalblue1","white","indianred1"))(256)
-
-library(geco.supervised);
-library(geco.utils)
-library(geco.visu)
-library(edgeR); library(ggplot2); library(rgl); library(RColorBrewer); library(genefilter); library(xtable); library(geco.RNAseq); library(WriteXLS); library(data.table); library(stringr); library(limma); library(edgeR);library(dplyr) ####################################################################
-library(scTools)
+library(here)
+library(edgeR)
+library(ggplot2)
+library(rgl)
+library(RColorBrewer)
+library(genefilter)
+library(xtable)
+library(WriteXLS)
+library(data.table)
+library(stringr)
+library(limma)
+library(edgeR)
 library(Matrix)
 library(dplyr)
 library(corrplot)
-library(geco.utils)
-library(geco.visu)
 library(geco.unsupervised)
 library(scatterplot3d)
 library(scater)
@@ -42,16 +29,28 @@ library(colorRamps)
 library(geco.supervised)
 library(viridis)
 library(colorRamps)
-library(geco.supervised);  library(edgeR); library(ggplot2); library(rgl); library(RColorBrewer); library(genefilter); library(xtable); library(geco.RNAseq); library(WriteXLS); library(data.table); library(stringr); library(limma); library(edgeR)
-
-library(scTools)
 library(monocle3)
 library(dplyr)
 library(WriteXLS)
 library(clValid)
 library(ape)
 library(ConsensusClusterPlus)
-devtools::load_all("/media/pprompsy/LaCie/InstitutCurie/Documents/GitLab/R_packages/GeCo.Rpackages/geco.visu/")
+library(eulerr)
+
+library(doParallel)  # for parallel backend to foreach
+library(foreach)     # for parallel processing with for loops
+library(caret)       # for general model fitting
+library(rpart)       # for fitting decision trees
+library(ipred)  
+library(mlbench)
+library(doMC)
+
+library(geco.supervised)
+library(geco.RNAseq)
+library(geco.supervised)
+library(geco.utils)
+library(geco.visu)
+library(scTools)
 
 MSigDBFile1 <- "/media/pprompsy/LaCie/InstitutCurie/Documents/GitLab/ChromSCape_devel/data/hg38.MSIG.gs.rda" 
 MSigDBFile2 <- "/media/pprompsy/LaCie/InstitutCurie/Documents/GitLab/ChromSCape_devel/data/hg38.MSIG.ls.rda"
@@ -59,30 +58,37 @@ load(MSigDBFile1)
 load(MSigDBFile2)
 MSIG.ls = hg38.MSIG.ls
 MSIG.gs = hg38.MSIG.gs
+
 ### PARAMETERS	
 ####################################################################
-
-
 useClusterInfoFromUnsupp <- TRUE ## TRUE , FALSE
+
 ####################################################################
 ### DIRECTORIES and FILES 
 ####################################################################
 
-######VARIABLES
+######VARIABLESs
+setwd("")
+source(file.path(here(),"Scripts","global_var.R"))
 options(width=180)
-maindir <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/"
-resdir <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/Results_PDX/Supervised/Co_occurence";if(!file.exists(resdir)){dir.create(resdir)}
-RDatadir <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/Results_PDX/Supervised/RData/"
-RDatadir_unsup <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/Results_PDX/Unsupervised//RData/"
+
+maindir = file.path(here(),"output","scRNAseq")
+resdir <- file.path(maindir,"PDX","Supervised","Co_occurence");if(!file.exists(resdir)){dir.create(resdir)}
+resdir_heatmaps <- file.path(resdir,"Heatmaps");if(!file.exists(resdir_heatmaps)){dir.create(resdir_heatmaps)}
+resdir_predictors <- file.path(resdir,"Predictors");if(!file.exists(resdir_predictors)){dir.create(resdir_predictors)}
+resdir_gini <- file.path(resdir,"Gini");if(!file.exists(resdir_gini)){dir.create(resdir_gini)}
+resdir_venns <- file.path(resdir,"Venns");if(!file.exists(resdir_venns)){dir.create(resdir_venns)}
+RDatadir <- file.path(maindir,"PDX","Supervised","RData")
+RDatadir_unsup <- file.path(maindir,"PDX","Unsupervised","RData")
 RDataSupdir <-  file.path(resdir,"RData");if(!file.exists(RDataSupdir)){dir.create(RDataSupdir)}
 
-FC_threshold <- 2
+logFC_threshold <- 2
 Signif_threshold <- 0.01
 
 ## Import annotation file
 load(file.path(RDatadir,"Supervised_res_object_edgeR.Rdata"))
 load(file.path(RDatadir_unsup,"annot_anocol_final.RData"))
-overexpressed_pers_genes = my.res$gene_short_name[which(my.res$log2FC.persister_6_vs_UNT > FC_threshold & my.res$qval.persister_6_vs_UNT < Signif_threshold)]
+overexpressed_pers_genes = my.res$gene_short_name[which(my.res$log2FC.persister_6_vs_UNT > logFC_threshold & my.res$qval.persister_6_vs_UNT < Signif_threshold)]
 # save(overexpressed_pers_genes, file=file.path(RDatadir,"overexpressed_pers6_genes_vs_UNT.RData"))
 metadata <- annot_sel2
 anocol = anocol2
@@ -90,7 +96,7 @@ anocol = anocol2
 ### COMPARISON SETUP  
 ####################################################################
 
- mygps <- list(
+mygps <- list(
 'persister'=metadata[which(metadata$sample_id %in% c("HBCx95_persister_6souris") ),"cell_id"]
 )
  myrefs <- list(
@@ -106,8 +112,6 @@ groups <- names(mygps)
 load(file.path(RDatadir_unsup,"LogCounts.RData"))
 
 # Select only Untreated & Persister (6x mouse) cells
-set.seed(2047); 
-
 set.seed(2047);
 pers_151 = sample(mygps$persister,151,replace = F)
 unt_151 = sample(myrefs$UNT,151,replace = F)
@@ -119,8 +123,8 @@ unt_pers_all_cells =  c(mygps$persister, myrefs$UNT)
 cell_list = c("unt_pers_cells_151","unt_pers_all_cells")
 
 # Different set of genes
-setwd(maindir)
-load("common_over_genes_pers_vs_unt.RData")
+load(file.path(maindir,"common_over_genes_pers_vs_unt.RData"))
+
 predictor_genes_MM468 = c("KRT16","KRT17","AKR1B1","TPM2","AL161431.1","TPM2","IGFL2-AS1")
 predictor_genes_MM468 = intersect(predictor_genes_MM468,rownames(LogCounts))
 diff_genes <-  c("NNMT","TAGLN","INHBA","KRT6A","KRT6B","KRT16","KRT14","KLK10","KLK5","KLK7")
@@ -154,7 +158,9 @@ for(gene_sel in gene_lists){
     }
   }
   gc()
-  png(file.path(resdir,paste0("Cooccurrence_pers_genes_",gene_sel,"_",distHC,"_",methHC,".png")), height=4000,width=4000,res=300)
+  png(file.path(resdir_heatmaps,
+                paste0("Cooccurrence_pers_genes_",gene_sel,"_",distHC,"_",methHC,".png")),
+      height=4000,width=4000,res=300)
   
   geco.hclustAnnotHeatmapPlot(x=(mat.so),
                               hc=hc,
@@ -236,7 +242,7 @@ for(i in 1:2){
       mat.so[i,] <- geco.changeRange(mat.so[i,],newmin=0,newmax=1)
     }
   }
-  png(file.path(resdir,paste0("Cooccurrence_pers_genes_heatmap_",name,".png")), height=8000,width=8000,res=600)
+  png(file.path(resdir_heatmaps,paste0("Cooccurrence_pers_genes_heatmap_",name,".png")), height=8000,width=8000,res=600)
   geco.hclustAnnotHeatmapPlot(x=(mat.so),
                               hc=hc_genes,
                               hmColors=hmColors,
@@ -255,14 +261,6 @@ for(i in 1:2){
 ## Minimum set of features to find the sample of origin ###
 ###########################################################
 
-library(doParallel)  # for parallel backend to foreach
-library(foreach)     # for parallel processing with for loops
-library(caret)       # for general model fitting
-library(rpart)       # for fitting decision trees
-library(ipred)  
-library(mlbench)
-library(doMC)
-
 mat = as.data.frame(as.matrix(t(LogCounts[rownames(LogCounts) %in% 
                                                      overexpressed_pers_genes,
                                                    unt_pers_cells_151])))
@@ -278,7 +276,6 @@ control <- rfeControl(functions=rfFuncs, method="cv", number=5)
 registerDoMC(cores = 7)
 set.seed(2047)
 results <- rfe(mat, class, sizes=c(2:25,seq(30,length(overexpressed_pers_genes)-1,5)), rfeControl=control)
-
 save(results, file = file.path(RDatadir,"results_rfe_PDX.RData"))
 gc()
 # OR load results :
@@ -288,7 +285,7 @@ gc()
 print(results)
 
 # plot the results
-png(file.path(resdir,paste0("curve_predictor_genes.png")), height=1000,1000)
+png(file.path(resdir_predictors,paste0("curve_predictor_genes.png")), height=1000,1000)
 plot(results, type=c("g", "o"))
 dev.off()
 
@@ -315,7 +312,7 @@ if(chRangeHM){
   }
 }
 
-png(file.path(resdir,paste0("Cooccurrence_pers_cells_predictor_genes.png")), height=4000,width=4000,res=600)
+png(file.path(resdir_predictors,paste0("Cooccurrence_pers_cells_predictor_genes.png")), height=4000,width=4000,res=600)
 corColors <- colorRampPalette(c("royalblue","white","indianred1"))(256)
 geco.hclustAnnotHeatmapPlot.withColumn(x=mat.so[hc_genes$order,hc$order],
                                        hc=hc,
@@ -332,12 +329,11 @@ geco.hclustAnnotHeatmapPlot.withColumn(x=mat.so[hc_genes$order,hc$order],
 )
 dev.off()
 
-png(file.path(resdir,paste0("Cooccurrence_pers_cells_predictor_genes_hc.png")), height=800,width=2000)
+png(file.path(resdir_predictors,paste0("Cooccurrence_pers_cells_predictor_genes_hc.png")), height=800,width=2000)
 plot(hc)
 dev.off()
 
 ######## GINI coefficients ############
-load("common_over_genes_pers_vs_unt.RData")
 # house_keeping_genes = c("GAPDH","VGF","CCNA2","LMNA","GAPDH","UBB","UBC")
 # From  https://www.genomics-online.com/resources/16/5049/housekeeping-genes/
 # Eisenberg, Levanon: “Human housekeeping genes, revisited.
@@ -359,7 +355,8 @@ Gin_unt = edgeR::gini(t(bin_mat[]))
 Gini_focus = Gin_unt[which(names(Gin_unt) %in% c(house_keeping_genes,common_overexpressed_genes))]
 Gini_focus = data.frame(Gini_focus,0)
 colorlist = ifelse(rownames(Gini_focus) %in% house_keeping_genes, "grey", "red")
-pdf(file.path(resdir,"GiniScores_common_pers_genes_hk_inInitial.pdf"),width = 12)
+
+pdf(file.path(resdir_gini,"GiniScores_common_pers_genes_hk_inInitial.pdf"),width = 12)
 plot(0,0,type="n",xlim=c(-0.06,1.06), ylim=c(0,2), yaxt = 'n', main ="Gini Scores")
 for (i in 1:length(Gini_focus$Gini_focus)) { stripchart(Gini_focus$Gini_focus[i],
                                                         add = T, bg = colorlist[i],
@@ -380,7 +377,7 @@ Gin_pers = edgeR::gini(t(bin_mat_pers))
 Gin_pers_focus = Gin_pers[which(names(Gin_pers) %in% c(house_keeping_genes,common_overexpressed_genes))]
 Gin_pers_focus = data.frame(Gin_pers_focus,0)
 colorlist = ifelse(rownames(Gin_pers_focus) %in% house_keeping_genes, "grey", "red")
-pdf(file.path(resdir,"GiniScores_common_pers_genes_hk_inPersister.pdf"),width = 12)
+pdf(file.path(resdir_gini,"GiniScores_common_pers_genes_hk_inPersister.pdf"),width = 12)
 plot(0,0,type="n",xlim=c(-0.06,1.06), ylim=c(0,2), yaxt = 'n', main ="Gini Scores")
 for (i in 1:length(Gin_pers_focus$Gin_pers_focus)) { stripchart(Gin_pers_focus$Gin_pers_focus[i],
                                                                 add = T, bg = colorlist[i],
@@ -398,7 +395,7 @@ difference_in_homogeneity = cbind(Gini_focus[which(rownames(Gini_focus) %in% gen
   Gin_pers_focus[which( rownames(Gin_pers_focus) %in% genes_expressed_both),1,drop=F])
 difference_in_homogeneity$gain_homogeneity = difference_in_homogeneity$Gini_focus - difference_in_homogeneity$Gin_pers_focus
 difference_in_homogeneity$Gene = rownames(difference_in_homogeneity)
-png(file.path(resdir,paste0("Top6_Gain_in_homogeneity.png")), height=1500,width=1500,res=300)
+png(file.path(resdir_gini,paste0("Top6_Gain_in_homogeneity.png")), height=1500,width=1500,res=300)
 difference_in_homogeneity %>% dplyr::arrange(dplyr::desc(gain_homogeneity)) %>%  head %>%
   dplyr::mutate(Gene = factor(Gene,levels=Gene)) %>% ggplot() +
   geom_bar(aes(x=Gene,y=gain_homogeneity),stat="identity") +
@@ -408,7 +405,6 @@ dev.off()
 bin_mat =  mat
 bin_mat[bin_mat>0] = 1
 
-# high_gini_genes = names(Gin_unt)[which(Gin_unt>0.75)]
 odd_ratio_mat = matrix(0,nrow = nrow(bin_mat), ncol=nrow(bin_mat)
                        ,dimnames = list(rownames(bin_mat),rownames(bin_mat)))
 fisher_pvalue_mat = matrix(0,nrow = nrow(bin_mat), ncol=nrow(bin_mat)
@@ -460,19 +456,19 @@ odd_ratio_mat = odd_ratio_mat[jackpot_genes,jackpot_genes]
 odd_ratio_mat[odd_ratio_mat<0]=0
 odd_ratio_mat[lower.tri(odd_ratio_mat)] = 0
 
-png(file.path(resdir,paste0("LogOddRatio_rarity.png")), height=4000,width=4000,res=400)
+png(file.path(resdir_gini,paste0("LogOddRatio_rarity.png")), height=4000,width=4000,res=400)
 gplots::heatmap.2((odd_ratio_mat),Rowv = F,Colv = F
                   , trace="none", density = "none", scale ="none",
                   col =rev(inferno(20)))
 dev.off()
 
-png(file.path(resdir,paste0("Pvalue_rarity.png")), height=4000,width=4000,res=400)
+png(file.path(resdir_gini,paste0("Pvalue_rarity.png")), height=4000,width=4000,res=400)
 gplots::heatmap.2((fisher_pvalue_mat),Rowv = F,Colv = F
                   , trace="none", density = "none", scale ="none",
                   col =rev(inferno(20)))
 dev.off()
 
-png(file.path(resdir,paste0("Qvalue_rarity.png")), height=4000,width=4000,res=400)
+png(file.path(resdir_gini,paste0("Qvalue_rarity.png")), height=4000,width=4000,res=400)
 gplots::heatmap.2((fisher_qvalue_mat),Rowv = F,Colv = F
                   , trace="none", density = "none", scale ="none",
                   col =rev(inferno(20)))
@@ -483,7 +479,7 @@ odd_ratio_mat <- geco.changeRange(odd_ratio_mat,newmin=0,newmax=1)
 
 combined_mat = fisher_pvalue_mat + odd_ratio_mat
 
-png(file.path(resdir,paste0("Combined_pvalue_logOddRatio_rarity.png")), height=4000,width=4000,res=400)
+png(file.path(resdir_gini,paste0("Combined_pvalue_logOddRatio_rarity.png")), height=4000,width=4000,res=400)
 gplots::heatmap.2((combined_mat),Rowv = F,Colv = F
                   , trace="none", density = "none", scale ="none",
                   col =rev(inferno(20)))
@@ -501,7 +497,7 @@ for(gene in jackpot_genes){
     theme_classic() + ggtitle(gene) + theme(legend.position = "None")
 }
 
-pdf(file.path(resdir,"histogram_transcript_abundance_marker_genes_in_untreated.pdf"))
+pdf(file.path(resdir_gini,"histogram_transcript_abundance_marker_genes_in_untreated.pdf"))
 gridExtra::grid.arrange(p[[1]],p[[2]],p[[3]],p[[4]],p[[5]],p[[6]],p[[7]],p[[8]],p[[9]],nrow = 3)
 gridExtra::grid.arrange(p[[10]],p[[11]],p[[12]],p[[13]],p[[14]],p[[15]],p[[16]],nrow = 3)
 dev.off()
@@ -510,7 +506,7 @@ top =sort(fisher_pvalue_mat[],decreasing = T)[1:5]
 for(gene_k in rownames(fisher_pvalue_mat)){
   for(gene_i in rownames(fisher_pvalue_mat)){
     if(fisher_pvalue_mat[gene_i,gene_k] %in% top){
-      png(file.path(resdir,paste0(gene_i,"_",gene_k,"_dotplot.png")), height=1500,width=1500,res=300)
+      png(file.path(resdir_gini,paste0(gene_i,"_",gene_k,"_dotplot.png")), height=1500,width=1500,res=300)
       tab = as.data.frame(cbind(mat[gene_i,],mat[gene_k,]))
       tab$cell_id = rownames(tab)
       colnames(tab)[1:2] = c("A","B")
@@ -526,8 +522,7 @@ for(gene_k in rownames(fisher_pvalue_mat)){
   }
 }
 
-library(eulerr)
-if(!dir.exists(file.path(resdir,"Venns"))) dir.create(file.path(resdir,"Venns"))
+# Venn diagrams
 for(gene_k in jackpot_genes){
   p=list()
   for(gene_i in jackpot_genes){
@@ -552,7 +547,7 @@ for(gene_k in jackpot_genes){
       p[[paste0(gene_i,"_",gene_k)]] = e
     }
   }
-  pdf(file.path(resdir,"Venns",paste0("Venns_",gene_k,".pdf")))
+  pdf(file.path(resdir_venns,paste0("Venns_",gene_k,".pdf")))
   gridExtra::grid.arrange(plot(p[[1]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),plot(p[[2]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),plot(p[[3]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),
                           plot(p[[4]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),plot(p[[5]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),plot(p[[6]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),
                           plot(p[[7]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),plot(p[[8]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),plot(p[[9]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),nrow = 3)
@@ -563,13 +558,13 @@ for(gene_k in jackpot_genes){
   dev.off()
 }
 
-png(file.path(resdir,"Venns",paste0("Venn_KLK10_KLK5_KRT14.png")), height=1500,width=1500,res=300)
+png(file.path(resdir_venns,paste0("Venn_KLK10_KLK5_KRT14.png")), height=1500,width=1500,res=300)
 v = data.frame("KLK10" =(bin_mat["KLK10",] > 0),
                "KLK5"= (bin_mat["KLK5",] > 0),
                "KRT14" = (bin_mat["KRT14",] > 0),
                "All" = T)
 e = euler(v,shape = "ellipse")
-plot(e, quantities = TRUE,labels=list(cex=),fills = c("#4b164bff", "#fbefafff","#f66f5eec","#DBDBDB"))
+plot(e, quantities = TRUE,labels=list(cex=0.75),fills = c("#4b164bff", "#fbefafff","#f66f5eec","#DBDBDB"))
 dev.off()
 
 
@@ -594,19 +589,19 @@ odd_ratio_mat = odd_ratio_mat_all[house_keeping_genes,house_keeping_genes]
 odd_ratio_mat[odd_ratio_mat<0]=0
 odd_ratio_mat[lower.tri(odd_ratio_mat)] = 0
 
-png(file.path(resdir,paste0("LogOddRatio_rarity_HK.png")), height=4000,width=4000,res=400)
+png(file.path(resdir_gini,paste0("LogOddRatio_rarity_HK.png")), height=4000,width=4000,res=400)
 gplots::heatmap.2((odd_ratio_mat),Rowv = F,Colv = F
                   , trace="none", density = "none", scale ="none",
                   col =rev(inferno(20)))
 dev.off()
 
-png(file.path(resdir,paste0("Pvalue_rarity_HK.png")), height=4000,width=4000,res=400)
+png(file.path(resdir_gini,paste0("Pvalue_rarity_HK.png")), height=4000,width=4000,res=400)
 gplots::heatmap.2((fisher_pvalue_mat),Rowv = F,Colv = F
                   , trace="none", density = "none", scale ="none",
                   col =rev(inferno(20)))
 dev.off()
 
-png(file.path(resdir,paste0("Qvalue_rarity_HK.png")), height=4000,width=4000,res=400)
+png(file.path(resdir_gini,paste0("Qvalue_rarity_HK.png")), height=4000,width=4000,res=400)
 gplots::heatmap.2((fisher_qvalue_mat),Rowv = F,Colv = F
                   , trace="none", density = "none", scale ="none",
                   col =rev(inferno(20)))
@@ -623,7 +618,7 @@ for(gene in house_keeping_genes){
     theme_classic() + ggtitle(gene) + theme(legend.position = "None")
 }
 
-pdf(file.path(resdir,"histogram_transcript_abundance_hk.pdf"))
+pdf(file.path(resdir_gini,"histogram_transcript_abundance_hk.pdf"))
 gridExtra::grid.arrange(p[[1]],p[[2]],p[[3]],p[[4]],p[[5]],p[[6]],p[[7]],p[[8]],p[[9]],nrow = 3)
 gridExtra::grid.arrange(p[[10]],p[[11]],p[[12]],p[[13]],nrow = 3)
 dev.off()
@@ -634,6 +629,7 @@ dev.off()
 load(file.path(RDatadir_unsup,"umap.RData"))
 umap_res. = umap_res[rownames(coocurrence_persister_genes_score),]
 anocol. = geco.annotToCol4(coocurrence_persister_genes_score)
+
 png(file.path(resdir,paste0("UMAP_",colnames(anocol.)[1],".png")), height=1350,width=1200,res=300)
 plot((umap_res.), col=alpha(anocol.[,1],0.3),pch=20,cex=0.6,
      main=paste0(colnames(anocol.)[1]," min=",round(min(coocurrence_persister_genes_score[,colnames(anocol.)[1]]),digits=3),
@@ -676,8 +672,9 @@ bin_mat[bin_mat>0] = 1
 vars = apply(bin_mat, MARGIN = 2, var)
 coocurrence_persister_genes_score$homogeneity = 1-vars
 anocol. = geco.annotToCol4(coocurrence_persister_genes_score,plotLegend=T,
-                           plotLegendFile=file.path(resdir,"Annotation_legends.pdf"))
-png(file.path(resdir,paste0("UMAP_homogeneity.png")), height=1350,width=1200,res=300)
+                           plotLegendFile=file.path(resdir,"Annotation_legends_homogeneity.pdf"))
+
+png(file.path(resdir,"..","..","Unsupervised","UMAP",paste0("UMAP_homogeneity.png")), height=1350,width=1200,res=300)
 plot((umap_res.), col=alpha(anocol.[,"homogeneity"],0.3),pch=20,cex=0.6,
      main=paste0("homogeneity"," min=",round(min(coocurrence_persister_genes_score[,"homogeneity"]),digits=3),
                  " max=",round(max(coocurrence_persister_genes_score[,"homogeneity"]),digits=3)),
