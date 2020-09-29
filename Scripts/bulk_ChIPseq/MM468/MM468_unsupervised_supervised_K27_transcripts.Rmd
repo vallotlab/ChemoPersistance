@@ -1,0 +1,628 @@
+---
+title: "ChIPseq_unsupervised_supervised"
+author: "Céline Vallot"
+date: "05/06/2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+library(scran)
+library(corrplot)
+library(devtools)
+#library(BiocInstaller)
+library(pheatmap)
+library(limma)
+library(scater)
+library(statmod)
+#library(pcaMethods)
+library(Matrix)
+library(dplyr)
+library(geco.utils)
+library(geco.visu)
+#library(ConsensusClusterPlus)
+library(geco.unsupervised)
+library(geco.ChIPseq)
+#library(seriation)
+#library(heatmap.plus)
+#library(scatterplot3d)
+library(Rtsne)
+library(RColorBrewer)
+library(colorRamps)
+library(dplyr)
+library(tidyr)
+library(viridis)
+library(wesanderson)
+library(knitr)
+library(ChromSCape)
+options(stringsAsFactors = F)
+```
+
+```{r, echo=FALSE}
+
+#Directories
+dataDir <- "K27_transcripts_10k/07csv/"
+annotDir <- "peaks/"
+resdir1 <- "K27_transcripts_10k/results/"
+
+#Count matrices
+#result50k <- read.csv(file.path(dataDir,"results_hg38.50k.csv"))
+resultZ <- read.csv(file.path(dataDir,"results_MM468_all_transcripts10k_v2.csv"))
+IDs = paste(resultZ$Chromosome,resultZ$Begin,resultZ$End,sep="_")
+dups = which(duplicated(IDs))
+if(length(dups)>0) {resultZ = resultZ[-dups,]}
+rownames(resultZ) <- paste(resultZ$Chromosome,resultZ$Begin,resultZ$End,sep="_")
+
+#Annot peaks
+annotZerone <- read.table(file.path(annotDir,"gencode.v34.annotation_V2.bed"),sep="\t")
+colnames(annotZerone) <- c("chr","start","end","transcripts","Gene","strand")
+annotZerone$ID = paste0(annotZerone$chr,"_",annotZerone$start,"_",annotZerone$end)
+if(length(dups)>0){annotZerone = annotZerone[-dups,]}
+rownames(annotZerone) <- annotZerone$ID
+annotZerone$lengthPeak <- annotZerone$end - annotZerone$start
+
+
+#annot50k <- read.csv(file.path(dataDir,"50k_peak_annotation.csv"),sep="\t")
+#annot50k<- annot50k[,c(1,12,13)]
+
+#Sample annotation
+annotSample <- read.csv(file.path(dataDir,"BowtieStats_annotated.txt"),sep=" ")
+annotSample = annotSample[,1:2]
+colnames(annotSample) = c("Treatment","Exp")
+rownames(annotSample) = gsub("_K27","",rownames(annotSample))
+#annot <- annot[-c(1,2),]
+
+#Adding external samples, here MM468_a and MM468_b
+#resultZ_sup <- read.csv(file.path(dataDir,"results_Zerone_merge_hg38_MM468_initial.csv")); dim(resultZ_sup)
+#rownames(resultZ_sup) <- paste(resultZ_sup$Chromosome,resultZ_sup$Begin,resultZ_sup$End,sep="_")
+#resultZ <- plyr::join(resultZ,resultZ_sup,type="left"); dim(resultZ)
+
+#Variables
+annotCol <- c("Treatment","Exp")
+pcaText <- TRUE
+annotText <- "Sample"
+hcText <- "Name"  ## column used in hierarchical clustering # change names from Sample_x to actual sample name
+centering <- c("none","mean","median")[1]
+##Hierarchical clustering
+distHC <- c("distPearson","distCosine","euclidean","maximum","manhattan","canberra","binary","minkowski")[1]
+methHC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
+##ConsClust
+repsCC <- 1000
+pItemCC <- 0.8
+pFeatureCC <- 1
+clusterAlgCC <- c("hc","pam","km","kmdist")[1]
+distCC <- c("pearson","distCosine","euclidean","manhattan")[1]
+innerLinkageCC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
+finalLinkageCC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
+## Heatmap
+chRangeHM <-FALSE # Should be set to TRUE for expression data, FALSE for methylation data
+hmColors <- colorRampPalette(c("royalblue","white","indianred1"))(256)
+corColors <- colorRampPalette(c("indianred","white","forestgreen"))(256)
+
+
+#metadataFile <- file.path(ProjectDir, "Scripts", expType, paste0("metadata_",expType,"_", annoType, ".txt") )
+maxKHC <- 10
+maxKCC <- 10
+
+##Regions to remove from analysis: CNV
+#chr7_54450000_57400000 for Exp1, loss in 5FUR cells 
+```
+
+
+```{r, echo=FALSE}
+
+#Annotation of peaks with Gencode info, K4me3 peaks and enhancers of breast cancer
+# annotZerone <- read.table(file.path(annotDir,"MM468_peaks_K27.bed"),sep="\t")
+
+
+# annotZerone_genebody <- read.table(file.path(annotDir,"MM468_peaks_K27.pc.genebody.bed"),sep="\t")
+# annotZerone_genebody <- annotZerone_genebody[,-c(8:10)]
+# colnames(annotZerone_genebody) <- c("chr","start","end","ID","chrG","startG","endG","Gene")
+# annotZerone_genebody <- aggregate(Gene ~ ID, data = annotZerone_genebody, paste, collapse = ",")
+# annotZerone$genebody <- ""
+# annotZerone$genebody <- annotZerone_genebody$Gene[match(annotZerone$ID,annotZerone_genebody$ID)]
+# 
+# annotZerone_genebody_all <- read.table(file.path(annotDir,"MM468_peaks_K27.all.genebody.bed"),sep="\t")
+# annotZerone_genebody_all <- annotZerone_genebody_all[,-c(8:10)]
+# colnames(annotZerone_genebody_all) <- c("chr","start","end","ID","chrG","startG","endG","Gene")
+# annotZerone_genebody_all <- aggregate(Gene ~ ID, data = annotZerone_genebody_all, paste, collapse = ",")
+# annotZerone$genebody_all <- ""
+# annotZerone$genebody_all <- annotZerone_genebody_all$Gene[match(annotZerone$ID,annotZerone_genebody_all$ID)]
+# 
+# annotZerone_tss_i <- read.table(file.path(annotDir,"MM468_peaks_K27.distance.pc.transcript.tss.bed"),sep="\t")[,-c(5:7)]
+# colnames(annotZerone_tss_i) <- c("chr","start","end","ID","Gene","distance")
+# annotZerone_tss_i <- annotZerone_tss_i[!duplicated(annotZerone_tss_i),]
+# annotZerone_tss <- aggregate(Gene ~ ID, data = annotZerone_tss_i, paste, collapse = ",")
+# annotZerone_tss$distance <- aggregate(distance ~ ID, data = annotZerone_tss_i,min )[,2]
+# annotZerone$transcript <- ""
+# annotZerone$transcript <- annotZerone_tss$Gene[match(annotZerone$ID,annotZerone_tss$ID)]
+# annotZerone$distance <- ""
+# annotZerone$distance <- annotZerone_tss$distance[match(annotZerone$ID,annotZerone_tss$ID)]
+# 
+# annotZerone_tss_all_i <- read.table(file.path(annotDir,"MM468_peaks_K27.distance.all.transcript.tss.bed"),sep="\t")[,-c(5:7)]
+# colnames(annotZerone_tss_all_i) <- c("chr","start","end","ID","Gene","distance")
+# annotZerone_tss_all_i <- annotZerone_tss_all_i[!duplicated(annotZerone_tss_all_i),]
+# annotZerone_tss_all <- aggregate(Gene ~ ID, data = annotZerone_tss_all_i, paste, collapse = ",")
+# annotZerone_tss_all$distance <- aggregate(distance ~ ID, data = annotZerone_tss_all_i,min )[,2]
+# annotZerone$transcript_all <- ""
+# annotZerone$transcript_all <- annotZerone_tss_all$Gene[match(annotZerone$ID,annotZerone_tss_all$ID)]
+# annotZerone$distance_all <- ""
+# annotZerone$distance_all <- annotZerone_tss_all$distance[match(annotZerone$ID,annotZerone_tss_all$ID)]
+# 
+# annotZerone$peak_affectation <- "intergenic"
+# annotZerone$peak_affectation[annotZerone$distance<1000] <- "tss_pc"
+# annotZerone$peak_affectation[annotZerone$distance>1000 & !is.na(annotZerone$genebody)] <- "genebody_pc"
+# annotZerone$peak_affectation[annotZerone$distance>1000 & is.na(annotZerone$genebody) & annotZerone$distance_all<1000] <- "tss_other"
+# annotZerone$peak_affectation[annotZerone$distance>1000 & is.na(annotZerone$genebody) & annotZerone$distance_all>1000 & !is.na(annotZerone$genebody_all)] <- "genebody_other"
+# 
+# annotZerone$gene_affectation <- "intergenic"
+# annotZerone$gene_affectation[annotZerone$distance<1000] <- annotZerone$transcript[annotZerone$distance<1000]
+# annotZerone$gene_affectation[annotZerone$distance>1000 & !is.na(annotZerone$genebody)] <- annotZerone$genebody[annotZerone$distance>1000 & !is.na(annotZerone$genebody)]
+# annotZerone$gene_affectation[annotZerone$distance>1000 & is.na(annotZerone$genebody) & annotZerone$distance_all<1000] <- annotZerone$transcript_all[annotZerone$distance>1000 & is.na(annotZerone$genebody) & annotZerone$distance_all<1000]
+# annotZerone$gene_affectation[annotZerone$distance>1000 & is.na(annotZerone$genebody) & annotZerone$distance_all>1000 & !is.na(annotZerone$genebody_all)] <- annotZerone$genebody_all[annotZerone$distance>1000 & is.na(annotZerone$genebody) & annotZerone$distance_all>1000 & !is.na(annotZerone$genebody_all)] 
+# 
+# table(annotZerone$peak_affectation)
+# 
+# annotZerone_K4 <- read.table(file.path(annotDir,"MM468_peaks_K27.K4.bed"),sep="\t")
+# colnames(annotZerone_K4) <- c("chr","start","end","ID","chrG","startG","endG")
+# annotZerone_K4$ID_K4 <- paste(annotZerone_K4$chr,annotZerone_K4$start,annotZerone_K4$end,sep="_")
+# annotZerone$K4_ID <- annotZerone_K4$ID_K4[match(annotZerone$ID,annotZerone_K4$ID)]
+# annotZerone$K4 <- !is.na(annotZerone$K4_ID)
+# 
+# table(annotZerone$peak_affectation, annotZerone$K4)
+# 
+# annotZerone$bivalent <- (annotZerone$peak_affectation %in% c("tss_pc") & annotZerone$K4 )
+# 
+# annotZerone_enhancer <- read.table(file.path(annotDir,"MM468_peaks_K27_enhancers.bed"),sep="\t",row.names = 1)
+# annotZerone_enhancer <- annotZerone_enhancer[rownames(annotZerone),]
+# annotZerone$enhancer <- annotZerone_enhancer$V8==0
+# sel <- (annotZerone$peak_affectation=="intergenic" & annotZerone$enhancer)
+# annotZerone$peak_affectation[sel] <- "intergenic_enhancer"
+# 
+# annotZerone$peak_affectation <- factor(annotZerone$peak_affectation,levels=c("intergenic","intergenic_enhancer","tss_pc","genebody_pc","tss_other","genebody_other"))
+# #missing coordinates of enhancer to add
+
+annotZerone <- annotZerone[rownames(resultZ),]
+
+
+```
+
+```{r, echo=FALSE}
+#Preparing raw count and normalized count matrices
+rownames(resultZ) <- paste(resultZ$Chromosome,resultZ$Begin,resultZ$End,sep="_")
+RZ <- (resultZ[,-c(1:3,grep(pattern = "input",colnames(resultZ)))]) #RZ matrix is the raw count matrix
+
+#create RPKM matrix by normalizing per library size and peak length
+RZ_RPKM <- (10^9*t(t((RZ+1)/annotZerone$lengthPeak)/colSums(RZ)))
+```
+
+
+```{r, echo=FALSE}
+#Selecting samples for unsupervised analysis
+
+#RZ <- (RZ[,-grep(pattern = "sc",colnames(RZ))]) #remove single cell datasets from analysis
+RZ_sel <- RZ
+# RZ_sel <- (RZ_sel[,-grep(pattern = "_C1_",colnames(RZ_sel))]);dim(RZ_sel) #remove C1 clones from analysis
+# RZ_sel <- (RZ_sel[,-grep(pattern = "_a_",colnames(RZ_sel))]);dim(RZ_sel) #remove C1 clones from analysis
+# RZ_sel <- (RZ_sel[,-grep(pattern = "K4",colnames(RZ_sel))]);dim(RZ_sel) #remove C1 clones from analysis
+# RZ_sel <- (RZ_sel[,-grep(pattern = "231",colnames(RZ_sel))]);dim(RZ_sel) #remove C1 clones from analysis
+# RZ_sel <- (RZ_sel[,-grep(pattern = "436",colnames(RZ_sel))]);dim(RZ_sel) #remove C1 clones from analysis
+RZ_sel <- (RZ_sel[,-grep(pattern = "GSK",colnames(RZ_sel))]);dim(RZ_sel) #remove C1 clones from analysis
+RZ_sel <- (RZ_sel[,-grep(pattern = "MM468_1",colnames(RZ_sel))]);dim(RZ_sel) #remove C1 clones from analysis
+RZ_sel <- (RZ_sel[,-grep(pattern = "spike",colnames(RZ_sel))]);dim(RZ_sel) #remove C1 clones from analysis
+# RZ_sel <- (RZ_sel[,grep(pattern = "_3_|_5_",colnames(RZ_sel))]);dim(RZ_sel) #remove C1 clones from analysis
+
+# RZ_sel <- (RZ_sel[,-grep(pattern = "_b_",colnames(RZ_sel))]);dim(RZ_sel) #remove C1 clones from analysis
+dim(RZ_sel)
+colnames(RZ_sel)
+ExpName <- "MM468_K27_transcripts_10k_bulk"
+#remplace MM468_a par un autre early du même batch: MM468_dosetest_DMSO par exemple
+#séparer les clustering avec ou sans GSKJ4
+#RZ_sel <- (RZ_sel[,-grep(pattern = "MM468_1_",colnames(RZ_sel))]) #remove C1 clones from analysis
+
+# RZ_sel <- (RZ_sel[,!colnames(RZ_sel) %in% c("MM468_1_J131_5FUR_K27","MM468_1_J147_5FUR_K27","MM468_1_J147_DMSO_K27","MM468_5_J67_DMSO_spike_K27","MM468_5_J67_5FUR_spike_K27")]) 
+
+dim(RZ_sel)
+annotZerone_sel <- annotZerone; dim(annotZerone_sel)
+
+#remove regions with no counts
+# RZ_sel <- RZ[rowSums(RZ)>0,]
+# annotZerone_sel <- annotZerone[rowSums(RZ)>0,]
+# dim(RZ_sel)
+# dim(annotZerone_sel)
+
+#remove regions smaller than XXXbp
+# sel2 <- annotZerone_sel$ID[annotZerone_sel$lengthPeak>0]
+# RZ_sel2 <- RZ_sel[sel2,]; dim(RZ_sel2)
+# annotZerone_sel2 <- annotZerone_sel[sel2,]
+
+exp.sd <- apply(RZ_sel, 1, sd)
+sel2 <- order(exp.sd, decreasing = TRUE)[1:1000]
+RZ_sel2 <- RZ_sel[sel2,]; dim(RZ_sel2)
+annotZerone_sel2 <- annotZerone_sel[sel2,]
+
+#remove regions with CNV acquired during resistance
+# RZ_sel2 <- RZ_sel2[annotZerone_sel2$ID,]
+# regions <- ( annotZerone_sel2$chr=="chr7" & as.numeric(annotZerone_sel2[,3])>54449999 & as.numeric(annotZerone_sel2[,3])<57400000)
+# #sel3 <- annotZerone_sel2$ID[-regions]
+# 
+# RZ_sel3 <- RZ_sel2[!regions,]
+# annotZerone_sel3 <- annotZerone_sel2[!regions,]
+#RZ_RPKM <- (10^9*t(t((RZ_sel2+1)/annotZerone_sel2$lengthPeak)/colSums(RZ_sel2)))
+
+mat <- log2(RZ_RPKM[rownames(RZ_sel2),colnames(RZ_sel2)])
+dim(mat)
+hist(mat,breaks=100,main="Distribution of log2 pseudo IP")
+
+```
+
+```{r, echo=FALSE}
+library(scTools)
+  resSUBdir <- file.path(resdir1, "Correlation") ; if(!file.exists(resSUBdir)){dir.create(resSUBdir)}
+  RDatadir <- file.path(resSUBdir,"RData") ; if(!file.exists(RDatadir)){dir.create(RDatadir)}
+  annotSample = annot_sel <- data.frame(
+    "Name" = colnames(mat),
+    "Treatment"= gsub(".*_","",
+                              gsub("J...|J..","",
+                                   gsub("_K27","",colnames(mat)))),
+    "Exp" =paste0("Exp_",gsub("_.*","",
+                              gsub("MM468_","",
+                                   gsub("_K27","",colnames(mat))))
+    ),
+    "day" = gsub("_.*","",
+                 gsub(".*_J","",colnames(mat))) 
+  )
+  
+  anocol <- geco.annotToCol2(annotS=annot_sel[,annotCol],annotT=annot_sel,plotLegend=T,plotLegendFile=file.path(resSUBdir,"Annotation_legends.pdf"), categCol=NULL)
+  
+  control <- c("#E0E0E0","#BDBDBD","#757575","#474747")
+  persister_color <- c("#DCEDC8","#9CCC65","#4CAF50","#009688")
+  treated_UNC_color <- c("#2196F3", "#4DD0E1" )
+  treated_GSKJ4_color <- c("#C2185B", "#EC407A" )
+  res_color <- c("#FFEB3B","#FFC107","#FF9800","#FF5722")
+
+  anocol[anocol[,1]=="mediumaquamarine",1] <- "#9CCC65"
+  anocol[anocol[,1]=="plum1",1] <- "#BDBDBD"
+  anocol[anocol[,2]=="#7FC97F",2] <- "#E7F0C3"
+    anocol[anocol[,2]=="#BEAED4",2] <- "#F2A6A6"
+    anocol[anocol[,2]=="#FDC086",2] <- "#FFEADB"
+
+
+  # if(centering=="mean")	mat <- mat-apply(mat,1,mean)
+  # if(centering=="median")	mat <- mat-apply(mat,1,median)
+  
+  save(annotSample,file=file.path(RDatadir,"annot.RData"))
+  save(anocol,file=file.path(RDatadir,"anocol.RData"))
+  save(mat,file=file.path(RDatadir,"mat.RData"))
+```
+
+
+##1.PCA
+```{r, echo=FALSE}  
+  ################################################################################
+  ## PCA
+  ################################################################################
+  pca <- prcomp(t(mat),center=T,scale=F)
+
+  save(pca,file=file.path(RDatadir,"pca.RData"))
+
+  
+  ## Barplot of standard deviations of each PC
+  #pdf(file.path(resSUBdir,"PCA_stdev_barplot.pdf"), height=6, width=6)
+  variances <- summary(pca)$importance["Proportion of Variance",]
+  variances <- variances[1:(length(variances)-1)] # remove last PC as not informative
+  barplot(variances, names.arg = names(variances), cex.names = 1, ylab = "Proportion of Variance", xlab="Principal components", las=2,col="royalblue",border="darkblue")
+  #dev.off()
+  
+  ## Automatic 2D PCA plots all versus all (up to the PC number specified)
+  # significant.PCs <- 4 # Can be determined from standard deviations plot
+  significant.PCs <- ncol(pca$x)-2 ; if (significant.PCs > 6) {significant.PCs <- 6}
+  combinations <- as.data.frame(combn(significant.PCs,2,simplify=TRUE))
+  extendXlimLeft <- 5 # Extend left Xlim by x percent of min
+  extendXlimRight <- 15 # Extend right Xlim by x percent of max
+  extendYlimBottom <- 5 # Extend bottom Ylim by x percent of min
+  extendYlimTop <- 5 # Extend top Ylim by x percent of max
+  TextSize <- 0.4
+  
+  # for (i in c(1:3)) {
+  #   pdf(file.path(resSUBdir,paste0(ExpName,sprintf("PCA%sVs%s_plot_2D.pdf", combinations[1,i], combinations[2,i] ))), height=6, width=6)
+  #   for(j in 1:ncol(anocol))	{
+  #     xlimits <- c((min(pca$x[,combinations[1,i]])-abs(min(pca$x[,combinations[1,i]])/100*extendXlimLeft)), (max(pca$x[,combinations[1,i]])+abs(max(pca$x[,combinations[1,i]])/100*extendXlimRight)))
+  #     ylimits <- c((min(pca$x[,combinations[2,i]])-abs(min(pca$x[,combinations[2,i]])/100*extendYlimBottom)), (max(pca$x[,combinations[2,i]])+abs(max(pca$x[,combinations[2,i]])/100*extendYlimTop)))
+  #     plot(pca$x[,combinations[1,i]],pca$x[,combinations[2,i]],col=anocol[,j],xlab=paste(colnames(pca$x)[combinations[1,i]],100*variances[combinations[1,i]]),ylab=paste(colnames(pca$x)[combinations[2,i]],100*variances[combinations[2,i]]),cex=0.8,lwd=1.5, main=colnames(anocol)[j], pch=19, 
+  #          xlim=xlimits,
+  #          ylim=ylimits
+  #     ) # changed type of point and xlim
+  #     if(pcaText)	text(pca$x[,combinations[1,i]],pca$x[,combinations[2,i]],labels=annot_sel[,annotText],pos=4,cex=TextSize)   
+  #   }
+  #   dev.off()
+  # }
+  
+  
+  i=1
+ png(file.path(resSUBdir,paste0(ExpName,sprintf("PCA%sVs%s_plot_2D_woText.png", combinations[1,i], combinations[2,i] ))), height=900,width=800,res=300)
+    j=1
+    xlimits <- c(-15,15)
+      ylimits <- c(-10,10)
+       plot(pca$x[,combinations[1,i]],pca$x[,combinations[2,i]],col=anocol[,j],xlab=paste(colnames(pca$x)[combinations[1,i]],100*variances[combinations[1,i]]),ylab=paste(colnames(pca$x)[combinations[2,i]],100*variances[combinations[2,i]]),cex=0.8,lwd=1.5, main=colnames(anocol)[j], pch=19, 
+           xlim=xlimits,
+           ylim=ylimits
+      ) 
+    #text(pca$x[,combinations[1,i]],pca$x[,combinations[2,i]],labels=annot_sel[,annotText],pos=4,cex=TextSize)   
+  dev.off() 
+    
+```
+
+##2. Correlation plots  
+```{r, echo=FALSE}
+  source("../../../../../Documents/GitLab/R_packages/geco.visu/R/Heatmaps.R")
+  ################################################################################
+  ## Cor Clustering on all data
+  ################################################################################
+  # hmColors <- colorRampPalette(brewer.pal(9, "Blues")[-c(6:9)])(100)
+ 
+  # colnames(mat) <- annot_sel$Name[match(colnames(mat),annot_sel$Name)]
+  hc_cor <- hclust(as.dist(1 - cor(mat)), method = "ward.D")
+  mat.so <- mat[,hc_cor$order]
+
+  
+  if(chRangeHM){
+    for(i in 1:nrow(mat.so)){
+      mat.so[i,] <- geco.changeRange(mat.so[i,],newmin=0,newmax=1)
+    }
+  }
+  
+  png(file.path(resSUBdir,paste0(ExpName,"_Clustering_correlation_matrix.png")), height=1000,width=1000,res=150)
+  geco.hclustAnnotHeatmapPlot(x=cor(mat.so),
+                              hc=hc_cor,
+                              hmColors=hmColors,
+                              anocol=anocol[hc_cor$order,],#[,ncol(cc.col):1]
+                              xpos=c(0.15,0.9,0.164,0.885),
+                              ypos=c(0.1,0.5,0.5,0.6,0.62,0.95),
+                              dendro.cex=0.5,
+                              xlab.cex=0.5,
+                              hmRowNames=TRUE,
+                              hmRowNames.cex=0.01
+  )
+ dev.off()
+ 
+  png(file.path(resSUBdir,paste0(ExpName,"_legend_clustering.png")), height=700,width=1000,res=150)
+  par(mar = c(11, 8, 8, 8))
+  lims <- seq(-1, 1, length.out = 200)
+  image(matrix(lims, nc = 1), col = hmColors, axes = F, 
+  xlab = paste0("min ",round(min(cor(mat.so)),2)," max ",max(cor(mat.so))))
+  dev.off()
+   
+  #save(hc_cor,file=file.path(RDatadir,"hc_cor.RData"))
+
+  
+  geco.hclustAnnotHeatmapPlot(x=cor(mat.so),
+                              hc=hc_cor,
+                              hmColors=hmColors,
+                              anocol=anocol[hc_cor$order,],#[,ncol(cc.col):1]
+                              xpos=c(0.15,0.9,0.164,0.885),
+                              ypos=c(0.1,0.5,0.5,0.6,0.62,0.95),
+                              dendro.cex=0.5,
+                              xlab.cex=0.5,
+                              hmRowNames=TRUE,
+                              hmRowNames.cex=0.01 
+ )
+  
+ ################################################################################
+  ## Corrplot package
+  ################################################################################
+  
+  corrplot(cor(mat),order="hclust",tl.col = "black",tl.cex=0.2,cl.cex=0.3,col=hmColors)
+```
+  
+##4. Diff analysis on IP signal only
+```{r, echo=FALSE}
+library(geco.supervised)
+#library(DESeq)
+library(ggplot2)
+#library(rgl)
+library(RColorBrewer)
+#library(genefilter)
+library(xtable)
+library(geco.ChIPseq)
+library(WriteXLS)
+library(gtools)
+library(limma)
+library(edgeR)
+options(width=180)
+
+resdir <- file.path(resdir1, "Supervised/");if(!file.exists(resdir)){dir.create(resdir)}
+tabdir <- file.path(resdir,"Tables");if(!file.exists(tabdir)){dir.create(tabdir)}
+plotdir <- file.path(resdir,"Plots");if(!file.exists(plotdir)){dir.create(plotdir)}
+EnrichDir <- file.path(tabdir,"Gene_set_analysis");if(!file.exists(EnrichDir)){dir.create(EnrichDir)}
+RDataSupdir <-  file.path(resdir,"RData");if(!file.exists(RDataSupdir)){dir.create(RDataSupdir)}
+
+
+# MSigDBFile <- "MSIG_v5.RData"
+#MSigDBFile <- "/Users/celinevallot/Documents/bioinfo/Reference_Transcriptome/hg38/msigdb_v7/MSIG_v7.RData"
+# load(MSigDBFile)
+library(ChromSCape)
+data("hg38.MSIG.gs")
+data("hg38.MSIG.ls")
+
+myrefs <- list(
+# DMSO2= annotSample[which(annotSample$Treatment=="DMSO" & annotSample$Exp=="Exp_2"),"Name"],
+# DMSO3_5= annotSample[which(annotSample$Treatment=="DMSO" & annotSample$Exp %in% c ("Exp_3","Exp_5")),"Name"]
+DMSO= annot_sel[which(annot_sel$Treatment=="DMSO"),"Name"]
+#DMSO= annotSample[which(annotSample$Treatment=="DMSO"),"Sample"]
+)
+mygps <- list(
+# X5FU2= annotSample[which(annotSample$Treatment=="5FUR" & annotSample$Exp=="Exp_2"),"Name"],
+# X5FU3_5= annotSample[which(annotSample$Treatment=="5FUR" & annotSample$Exp %in% c ("Exp_3","Exp_5")),"Name"]
+X5FU2_3_5= annotSample[which(annotSample$Treatment=="5FUR" & annotSample$Exp %in% c ("Exp_2","Exp_3","Exp_5")),"Name"]
+)
+
+refs <- names(myrefs)
+groups <- names(mygps)
+
+rownames(annot_sel) <- annot_sel$Name
+
+#selection of peaks with at least a log2 RPKM of 1 in one sample
+sel <- which(apply(RZ_RPKM[,colnames(RZ_sel2)],1,max)>1)
+
+annotZerone. = annotZerone[,c("chr","start","end","ID")]
+res <- geco.ChIPseqCompareLimma(mat=RZ,
+                                metadata = annot_sel,
+                                ref=myrefs,
+                                groups=mygps,
+                                featureTab=annotZerone.[rownames(RZ),]
+)
+res = cbind(res,annotZerone[,c("lengthPeak","Gene","transcripts")])
+
+write.table(res, file.path(tabdir,"Supervised_analysis_Limma.csv"),row.names=F,quote=F,sep=";",dec="," )
+save(res, file=file.path(RDataSupdir,paste("Supervised_res_Limma_object.Rdata",sep="")))
+  
+
+#res <- plyr::join(res,annotZerone,type="left"); dim(test)
+
+
+#res_sel <- res[abs(res$log2FC.X5FU2_3_5)>1 & (res$rpkm.DMSO>1 | res$rpkm.X5FU2_3_5>1) & res$qval.X5FU2_3_5<0.01,
+par(mar=c(5.1,2.1,4.1,2.1))
+summaryTab <- geco.summaryChIPseqCompareLimma(restab=res,
+										ref=myrefs,
+							 		 groups=mygps,
+  							 		 sign.th=0.1,
+							 		 plotdir=plotdir,
+								     fc.th=2,
+										volcano_dotcex = 1,
+										volcano_dot_alpha = 0.2,
+										volcano_add_xlim = 2,
+										display_top_names=0
+										)
+									 
+summaryTab <- data.frame("."=row.names(summaryTab), summaryTab, check.names=FALSE)		
+write.table(summaryTab, file.path(tabdir,"Number_differentially_bound_peaks_per_group.csv"),row.names=F,quote=F,sep=";"  )
+
+summaryTab <- geco.summaryChIPseqCompareLimma(restab=res,
+										ref=myrefs,
+							 		 groups=mygps,
+  							 		 sign.th=0.1,
+							 		 plotdir=plotdir,
+								     fc.th=2,
+										volcano_dotcex = 1,
+										volcano_dot_alpha = 0.2,
+										volcano_add_xlim = 2,
+										display_top_names=10
+										)
+```
+```{r,include=FALSE}
+par(mar=c(5,5,0,0))
+``` 
+
+##5. Enrichment analysis
+
+```{r, echo=FALSE}
+###Enrichment analysis
+
+data("hg38.GeneTSS")
+GencodeGene = hg38.GeneTSS 
+possibleGenes <- unique(GencodeGene$gene)
+
+
+qval.th <- 0.1
+for(FC in c(1,2)){
+  resTSS <- res #[res$peak_affectation=="tss_pc",]
+  #resTSS <- res[abs(as.numeric(res$dist_enhancer))<1000,] #you can change the annotation of interest to link peaks to genes
+  reflist <- possibleGenes
+  annotbase<- "MSigDB" 
+  MSIG.gs = hg38.MSIG.gs
+  enrichON <- MSIG.gs$Gene.Set[MSIG.gs$Class %in% c("c2_curated","c6_oncogenic","hallmark")] #remove unwanted gene lists to gain statistical power
+  MSIG.ls = hg38.MSIG.ls
+  database <- MSIG.ls[enrichON]
+  resTSS$Gene = as.character(resTSS$Gene)
+  resTSS = resTSS[which(resTSS$Gene %in% hg38.GeneTSS$gene),]
+  
+  for(i in 1:length(groups)) 	{
+    if (length(refs)>1) {ref <- refs[i]} else {ref <- refs[1]}
+    print(paste0("Processing ",groups[i], " vs ", ref, " _ ",annotbase ))
+    
+    signific <- which(resTSS[,paste("qval",groups[i],sep=".")] <= qval.th)
+    over     <- which(resTSS[,paste("qval",groups[i],sep=".")] <= qval.th & resTSS[,paste("log2FC",groups[i],sep=".")] > FC)
+    under    <- which(resTSS[,paste("qval",groups[i],sep=".")] <= qval.th & resTSS[,paste("log2FC",groups[i],sep=".")] < (-FC))
+    
+    if(length(over)){
+      enrich.test <- geco.enrichmentTest(gene.sets=database,
+                                         mylist=unique(unlist(strsplit(resTSS$Gene[over],split=","))),
+                                         possibleIds=reflist)
+      enrich.test <- data.frame(Gene_set_name=rownames(enrich.test), enrich.test, check.names=FALSE)
+      enrich.test <- merge( subset(MSIG.gs, select=-Genes), enrich.test, by.x="Gene.Set", by.y="Gene_set_name", all.y=TRUE, sort=FALSE ) ## Get class of gene set
+      enrich.test <- enrich.test[order(enrich.test$`p-value`),]
+      ind <- which(enrich.test$`q-value`<= qval.th);if(!length(ind)){ind <- 1:20}
+      Overexpressed  <- enrich.test[ind,]	
+      png(file.path(EnrichDir,paste0(groups[i],"_vs_",ref,"_qval",qval.th,"_logFC",FC,"_enriched_peaks_enrichment.png")), height=1000,width=1000,res=150)
+      par(mar = c(13, 4, 2, 2) + 1)
+      barplot(-log10(enrich.test$`q-value`[1:10]),las=2,names.arg = enrich.test$Gene.Set[1:10],cex.names = 0.5,ylab="-log10 q-value",main=paste0("Top 10 gene list of ",length(ind)," lists"))
+      dev.off()
+    }
+    
+    if(length(under)){
+      enrich.test <- geco.enrichmentTest(gene.sets=database,mylist=unique(unlist(strsplit(resTSS$Gene[under],split=","))),possibleIds=reflist)
+      enrich.test <- data.frame(Gene_set_name=rownames(enrich.test), enrich.test, check.names=FALSE)
+      enrich.test <- merge( subset(MSIG.gs, select=-Genes), enrich.test, by.x="Gene.Set", by.y="Gene_set_name", all.y=TRUE, sort=FALSE ) ## Get class of gene set
+      enrich.test <- enrich.test[order(enrich.test$`p-value`),]
+      ind <- which(enrich.test$`q-value`<= qval.th);if(!length(ind)){ind <- 1:20}
+      Underexpressed <- enrich.test[ind,]	
+      
+      png(file.path(EnrichDir,paste0(groups[i],"_vs_",ref,"_qval",qval.th,"_logFC",FC,"_depleted_peaks_enrichment.png")), height=1000,width=1000,res=150)
+      par(mar = c(13, 4, 2, 2) + 1)
+      barplot(-log10(enrich.test$`q-value`[1:10]),las=2,names.arg = enrich.test$Gene.Set[1:10],cex.names = 0.5,ylab="-log10 q-value",main=paste0("Top 10 gene list of ",length(ind)," lists") )
+      dev.off()		}
+    
+    WriteXLS(c("Overexpressed", "Underexpressed"), ExcelFileName =   file.path(EnrichDir,paste0("Enrichment_test_",groups[i],"_vs_",ref,"_",annotbase,"_",qval.th,"_",FC,".xlsx")), SheetNames = c( paste0("Enriched_in_", groups[i]), paste0("Depleted_in_", groups[i])), perl = "perl", verbose = FALSE, row.names = FALSE, col.names = TRUE, AdjWidth = TRUE, AutoFilter = TRUE, BoldHeaderRow = TRUE, na = "", FreezeRow = 1, FreezeCol = 1)
+  }
+}
+```
+
+5. Comparison K27me3 and K4me3 signal
+```{r, echo=FALSE}
+#By peak intersection
+# bivalent_MM468 <- read.table("~/Google Drive/MM468_bulk/ChIP/peaks/MM468_K27_K4_DMSO.annotated.bed")
+# all_K4 <- read.table("~/Google Drive/MM468_bulk/ChIP/peaks/MM468_K4.annotated.bed")
+# dim(bivalent_MM468)
+# bivalent_genes <- unique(bivalent_MM468$V10[bivalent_MM468$V11<1000])
+# K4_genes <-  unique(all_K4$V11[all_K4$V12<1000])
+# matches <- unique (grep(paste(bivalent_genes,collapse="|"),res$Gene, value=TRUE))
+# res$bivalent <- ""
+# res$bivalent[res$Gene %in% matches] <- "bivalent"
+# 
+# resTSS <- res[abs(as.numeric(res$dist_Gene))<1000,]
+# boxplot(resTSS$log2FC.X5FU2_3_5[resTSS$bivalent=="bivalent"],resTSS$log2FC.X5FU2_3_5[resTSS$bivalent==""]) 
+# boxplot(resTSS$K4me3_dist[resTSS$bivalent=="bivalent"],resTSS$K4me3_dist[resTSS$bivalent==""]) 
+# 
+# table(resTSS$bivalent[resTSS$qval.X5FU2_3_5<0.1 & resTSS$log2FC.X5FU2_3_5< -1])
+# table(resTSS$bivalent[resTSS$qval.X5FU2_3_5<0.1 & resTSS$log2FC.X5FU2_3_5< (-2)])
+# table(resTSS$bivalent[resTSS$qval.X5FU2_3_5<0.1 & abs(resTSS$log2FC.X5FU2_3_5)>2])
+
+#By comparing K4 and K27 log2 RPKM at K4 peaks
+K4_K27 <-  read.csv(file.path(dataDir,"results_Zerone_merge_hg38_K4_annot.csv"))
+rownames(K4_K27) <- paste(K4_K27$Chromosome,K4_K27$Begin,K4_K27$End,sep="_")
+annotK4 <- K4_K27[,c(1:3)]
+annotK4$length <- annotK4$End-annotK4$Begin
+write.table(annotK4,file=file.path(resdir1,"annot_K4_MM468.bed",sep="\t",row.names = F,quote=F,col.names = F))
+K4_K27_RPKM <- (10^9*t(t((K4_K27[,-c(1:3)]+1)/annotK4$length)/colSums(K4_K27[,-c(1:3)])))
+
+# K4_K27_RPKM <- K4_K27_RPKM[annotK4$length<2000,]
+# annotK4 <- annotK4[annotK4$length<2000,]
+#sampleName <- "MDAMB436"
+#K4sample <- paste0(sampleName,"_K4")
+K4sample <- "MM468_1_J147_DMSO_K4"
+#K27sample <- paste0(sampleName,"_K27")
+K27sample <- "MM468_5_J67_DMSO_K27"
+hist(log2(K4_K27_RPKM[,K4sample]),breaks=100)
+hist(log2(K4_K27_RPKM[,K27sample]),breaks=100)
+
+smoothScatter(log2(K4_K27_RPKM[,K4sample]),log2(K4_K27_RPKM[,K27sample]),colramp=viridis,pch=19,xlab="K4me3 enrichment",ylab="K27me3 enrichment")
+plot(log2(K4_K27_RPKM[,K4sample]),log2(K4_K27_RPKM[,K27sample]),col=alpha(1,0.1),pch=19,xlab="K4me3 enrichment",ylab="K27me3 enrichment")
+abline(v=4)
+abline(h=3)
+length(which(log2(K4_K27_RPKM[,K27sample])>4 & log2(K4_K27_RPKM[,K4sample])>2))
+
+```
+
+
