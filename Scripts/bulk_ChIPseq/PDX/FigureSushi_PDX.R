@@ -1,6 +1,6 @@
 
 maindir= here()
-inputDir <- file.path(maindir,"input","scChIPseq","BigWigs","PDX")
+inputDir <- file.path(maindir,"input","scChIPseq","PDX","BigWigs")
 resDir <- file.path(maindir,"output","bulk_ChIPseq","Snapshots")
 load(file.path(maindir,"annotation","Gencode_hg38_v25.RData"))
 
