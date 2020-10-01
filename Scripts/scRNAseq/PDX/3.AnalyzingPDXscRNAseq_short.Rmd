@@ -9,7 +9,6 @@ output: html_document
 knitr::opts_chunk$set(echo = FALSE)
 ```
 
-
 ```{r libraries}
 library(here)
 library(ChromSCape)
@@ -45,6 +44,7 @@ library(monocle3)
 library(dplyr)
 library(WriteXLS)
 library(Seurat)
+library(gplots)
 
 #Geco packages
 library(geco.supervised)
@@ -64,7 +64,7 @@ resdir <- file.path(here(),"output","scRNAseq","PDX")
 QCdir <- file.path(resdir,"QC")
 resSUBdir <- file.path(resdir, "Unsupervised") ; if(!file.exists(resSUBdir)){dir.create(resSUBdir)}
 resSUBdir_UMAP <- file.path(resdir, "Unsupervised","UMAP") ; if(!file.exists(resSUBdir_UMAP)){dir.create(resSUBdir_UMAP)}
-resSUBdir_boxplots <- file.path(resdir, "Unsupervised","boxplots") if(!file.exists(resSUBdir_boxplots)){dir.create(resSUBdir_boxplots)}
+resSUBdir_boxplots <- file.path(resdir, "Unsupervised","boxplots") ; if(!file.exists(resSUBdir_boxplots)){dir.create(resSUBdir_boxplots)}
 resSUBdir_heatmaps = file.path(resSUBdir,"Heatmaps"); if(!dir.exists(resSUBdir_heatmaps)) dir.create(resSUBdir_heatmaps)
 
 resSUBdir_sub = file.path(resSUBdir,"sub500"); if(!dir.exists(resSUBdir_sub)) dir.create(resSUBdir_sub)
@@ -121,10 +121,6 @@ annot_seurat$cell_id <- rownames(annot_seurat)
 if(all.equal(rownames(annot_sel),rownames(annot_seurat))) annot_sel2 <- cbind(annot_sel,annot_seurat) else print("ERROR")
 
 FeaturePlot(marrow, features = c("KDM6B", "MGP","IGFBP3","KRT6A","KRT14"))
-annotCol <- c("sample_id","total_features","Seurat_cluster","cell_cycle")
-pcaText <- FALSE
-annotText <- "sample_id"
-hcText <- "sample_id"  
 rm(marrow); gc()
 
 ```
@@ -132,6 +128,7 @@ rm(marrow); gc()
 ###Study cells with PCA, UMAP & hierarchical clustering
 
 ```{r, echo=FALSE}
+
 if(!(file.exists(file.path(RDatadir,"NormCounts.RData")) & file.exists(file.path(RDatadir,"LogCounts.RData")))){
     rownames(Signal) <- gene_metadata$Symbol
     rownames(annot_sel2) <- annot_sel2$cell_id
@@ -146,7 +143,7 @@ if(!(file.exists(file.path(RDatadir,"NormCounts.RData")) & file.exists(file.path
     cds <-  cluster_cells(cds)
     
     annot_sel2$louvain_cluster <- cds@clusters[[1]]$clusters
-    annot_sel2$louvain_cluster <- paste0("C",annot_sel2$louvain_partition)
+    annot_sel2$louvain_cluster <- paste0("C",annot_sel2$louvain_cluster)
     
     annot_sel2$louvain_partition <- cds@clusters[[1]]$partition
     annot_sel2$louvain_partition <- paste0("C",annot_sel2$louvain_partition)
@@ -183,51 +180,27 @@ annot_sel2$clustCol4 <- paste("C",match(cutree(hc_PCA,nclust),unique(cutree(hc_P
 ```
 
 ```{r, echo=FALSE}
+annotCol <- c("sample_id","total_features","Seurat_cluster","cell_cycle")
+pcaText <- FALSE
+annotText <- "sample_id"
+hcText <- "sample_id"  
+
 load(file.path(RDatadir,"LogCounts.RData"))
 load(file.path(RDatadir,"annot_anocol_final.RData"))
 
-diff_genes <-  c("NNMT","TAGLN","INHBA","KRT6A","KRT6B","KRT16","KRT14","KLK10",
-                 "KLK5","KLK7")
-diff_genes_figures <-  c("KRT17", "INHBB", "KRT5","KRT8","BMP6","CDKN2B","TGFBR2",
-                         "TGFBR3","TGFB2","INHBA","INHBB","SMAD2","TGFB1",
-                         "FOSL1","NNMT","KRT14","KLK10","KLK5","TAGLN","NNMT",
-                         "ELN","TGFBR3","MIF")
-
 annotCol <- c("sample_id","total_features","cell_cycle","rRNA","clustCol4",
               "clustCol5","clustCol6","louvain_partition", "louvain_cluster",
-              "Seurat_cluster", "MKI67","TGFB_KEGG","KEGG_TGFB_FC1",
-              "KEGG_TGFB_FC2",diff_genes_figures,"TGF_pathway",
-              "hallmark_EMT","MYB_targets","hallmark_TNFA")
-
+              "Seurat_cluster")
 pcaText <- FALSE
 annotText <- "sample_id"
 
-genes <- c("TGFB_KEGG","KEGG_TGFB_FC1","KEGG_TGFB_FC2","TGF_pathway",
-           "hallmark_EMT","hallmark_apoptosis","hallmark_TNFA",
-           "NRG1_signalling","MYB_targets","SMID_LUMINAL_DN")
-
-for(i in 1:length(genes)) {
-genelist <- get(genes[i])
-annot_sel2$test <- apply(LogCounts[genelist,],2,mean)
-colnames(annot_sel2)[dim(annot_sel2)[2]] <- genes[i]
-}
 for(i in annotCol){
     if(i %in% rownames(LogCounts)) annot_sel2[,i] <- LogCounts[which(rownames(LogCounts)==i),]
 }
 gc()
 
-if(file.exists(file.path(working_directory,"output","scRNAseq","common_overexpressed_genes_pers_vs_unt.RData"))){
-    load(file.path(working_directory,"output","scRNAseq","common_overexpressed_genes_pers_vs_unt.RData"))
-    
-    for(i in common_overexpressed_genes){
-        annot_sel2[,i] = LogCounts[i,annot_sel2$cell_id]
-    }
-
-    annotCol = unique(c(annotCol, common_overexpressed_genes))
-}
 ribo <- grepl("^RP[SL]",gene_metadata$Symbol)
 annot_sel2$rRNA <- apply(LogCounts[ribo,],2,mean)
-
 
 anocol2 <- geco.unsupervised::geco.annotToCol4(annotS=annot_sel2[,annotCol],annotT=annot_sel2,plotLegend=T,plotLegendFile=file.path(resSUBdir,"Annotation_legends.pdf"), scale_q = "inferno")
 
@@ -264,22 +237,11 @@ par(mfrow=c(5,2))
 barplot(rep(1,5),col=corres_cluster$color, cex.names  =0.8,horiz=F,names.arg=c("C1","C2","C3","C4","C5"),las=2)
 dev.off()
 
-
-png(file.path(resSUBdir_boxplots,"Boxplot_KEGG_TGFB_FC2.png"),width=1500,height=1500,res=300)
-boxplot(annot_sel2$KEGG_TGFB_FC2~annot_sel2$sample_id,las=2)
-dev.off()
-png(file.path(resSUBdir_boxplots,"Boxplot_KEGG_TGFB_FC1.png"),width=1500,height=1500,res=300)
-boxplot(annot_sel2$KEGG_TGFB_FC1~annot_sel2$sample_id,las=2)
-dev.off()
-png(file.path(resSUBdir_boxplots,"Boxplot_INHBA.png"),width=1500,height=1500,res=300)
-boxplot(annot_sel2$INHBA~annot_sel2$sample_id,las=2)
-dev.off()
-
 png(file.path(resSUBdir_boxplots,"Boxplot_rRNA.png"),width=1500,height=1500,res=300)
 boxplot(annot_sel2$rRNA~annot_sel2$sample_id,las=2)
 dev.off()
 
-if(!file.exists(file.path(RDatadir,"annot_anocol_final.RData"))) save(anocol2,annot_sel2,file=file.path(RDatadir,"annot_anocol_final.RData")) 
+ save(anocol2,annot_sel2,file=file.path(RDatadir,"annot_anocol_final.RData")) 
 ```
 
 ###Generate figures: UMAP and clustering with correlation heatmap
@@ -397,6 +359,7 @@ ggplot(intra_corr,aes(x=sample_id,y=intra_corr, fill=sample_id)) +
   stat_summary(fun=median, geom="point", size=2, color="black") + theme(axis.text.x = element_text(angle=90))
 dev.off()
 ```
+
 ###Study cell cycle in every sample
 
 ```{r , out.width="30%",include=FALSE}
@@ -421,12 +384,16 @@ dev.off()
 ```
 
 ## Supervised 
+
 ```{r , out.width="30%",include=FALSE}
 resdir_supervised=file.path(resdir,"Supervised"); if(!dir.exists(resdir_supervised)) dir.create(resdir_supervised)
 tabdir <- file.path(resdir_supervised,"Tables");if(!file.exists(tabdir)){dir.create(tabdir)}
 plotdir <- file.path(resdir_supervised,"Plots");if(!file.exists(plotdir)){dir.create(plotdir)}
 EnrichDir <- file.path(tabdir,"Gene_set_analysis");if(!file.exists(EnrichDir)){dir.create(EnrichDir)}
 RDataSupdir <-  file.path(resdir_supervised,"RData");if(!file.exists(RDataSupdir)){dir.create(RDataSupdir)}
+resdir_boxplots <-  file.path(resdir_supervised,"Boxplots");if(!file.exists(resdir_boxplots)){dir.create(resdir_boxplots)}
+resdir_UMAPs <-  file.path(resdir_supervised,"UMAP");if(!file.exists(resdir_UMAPs)){dir.create(resdir_UMAPs)}
+resdir_heatmaps <-  file.path(resdir_supervised,"Heatmaps");if(!file.exists(resdir_heatmaps)){dir.create(resdir_heatmaps)}
 
 load(file.path(resSUBdir,"RData","RawCounts_features.RData"))
 load(file.path(resSUBdir,"RData","all_sub_500.RData"))
@@ -518,7 +485,7 @@ print("summaryedgeRCompare Done")
 #import my.res et gene lists from diff analysis, logCounts, take top 10
 MSigDBFile1 <- "../../../annotation/hg38.MSIG.gs.rda" 
 MSigDBFile2 <- "../../../annotation/hg38.MSIG.ls.rda"
-load(file=file.path(RDataSupdir,paste("Supervised_res_object_edgeR.Rdata",sep="")))
+# load(file=file.path(RDataSupdir,paste("Supervised_res_object_edgeR.Rdata",sep="")))
 load(MSigDBFile1)
 load(MSigDBFile2)
 MSIG.ls = hg38.MSIG.ls
@@ -569,114 +536,212 @@ for(i in 1:length(groups)) 	{
             Underexpressed <- enrich.test[ind,]		}
         
         WriteXLS(c("Overexpressed", "Underexpressed"), ExcelFileName = file.path(EnrichDir,paste0("Enrichment_test_",gp,"_vs_",ref,"_",annotbase,"_logFC",round(log2FC_threshold,2),".xlsx")), SheetNames = c( paste0("Overexp_in_", gp), paste0("Underexp_in_", gp) ), perl = "perl", verbose = FALSE, row.names = FALSE, col.names = TRUE, AdjWidth = TRUE, AutoFilter = TRUE, BoldHeaderRow = TRUE, na = "", FreezeRow = 1, FreezeCol = 1)
+        
+        save(Overexpressed,Underexpressed, file = file.path(RDataSupdir,paste0("Enrichment_test_",gp,"_vs_",ref,"_",annotbase,"_logFC",round(log2FC_threshold,2),".RData")))
     }
 } 		
+```
+
+## Plot UMAP colored with differential genes and GSA enrichment
+
+### Get gene lists and differential genes
+
+```{r, echo=FALSE}
+load(file=file.path(RDatadir,"annot_anocol_final.RData"))
+diff_genes <-  c("NNMT","TAGLN","INHBA","KRT6A","KRT6B","KRT16","KRT14","KLK10",
+                 "KLK5","KLK7")
+diff_genes_figures <-  c("KRT17", "INHBB", "KRT5","KRT8","BMP6","CDKN2B","TGFBR2",
+                         "TGFBR3","TGFB2","INHBA","INHBB","SMAD2","TGFB1",
+                         "FOSL1","NNMT","KRT14","KLK10","KLK5","TAGLN","NNMT",
+                         "ELN","TGFBR3","MIF")
+
+
+pcaText <- FALSE
+annotText <- "sample_id"
+
+gene_lists <- c("KEGG_TGF_BETA_SIGNALING_PATHWAY",
+           "HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION",
+           "HALLMARK_APOPTOSIS","HALLMARK_TNFA","LEI_MYB_TARGETS")
+
+for(log2FC_threshold in log2FC_thresholds){
+    overgenes = my.res$Symbol[which(my.res$log2FC.persister_6_vs_UNT > log2FC_threshold & 
+              my.res$qval.persister_6_vs_UNT < Signif_threshold)]
+    for(i in gene_lists) {
+        genes <- intersect(overgenes, unlist(str_split(MSIG.gs[which(MSIG.gs$Gene.Set==i),3],",")))
+        annot_sel2$test <- apply(LogCounts[which(rownames(LogCounts) %in% genes),],2,mean)
+        colnames(annot_sel2)[dim(annot_sel2)[2]] <- paste0(i,"_logFC",round(log2FC_threshold,2))
+    }
+}
+
+for(i in annotCol){
+    if(i %in% rownames(LogCounts)) annot_sel2[,i] <- LogCounts[which(rownames(LogCounts)==i),]
+}
+gc()
+
+if(file.exists(file.path(here(), "output","scRNAseq","common_overexpressed_genes_pers_vs_unt.RData"))){
+    load(file.path(here(), "output","scRNAseq","common_overexpressed_genes_pers_vs_unt.RData"))
+    for(i in common_overexpressed_genes){
+        annot_sel2[,i] = LogCounts[i,annot_sel2$cell_id]
+    }
+    annotCol = unique(c(annotCol, common_overexpressed_genes))
+}
+
+anocol2 <- geco.unsupervised::geco.annotToCol4(
+    annotS=annot_sel2,annotT=annot_sel2,
+    plotLegend=T, plotLegendFile = file.path(resSUBdir,"Annotation_legends.pdf"),
+    scale_q = "inferno")
+
+
+png(file.path(resdir_boxplots,"Boxplot_KEGG_TGFB_FC2.png"),width=1500,height=1500,res=300)
+boxplot(annot_sel2$KEGG_TGF_BETA_SIGNALING_PATHWAY_logFC2~annot_sel2$sample_id,las=2)
+dev.off()
+
+png(file.path(resdir_boxplots,"Boxplot_KEGG_TGFB_FC1.png"),width=1500,height=1500,res=300)
+boxplot(annot_sel2$KEGG_TGF_BETA_SIGNALING_PATHWAY_logFC1~annot_sel2$sample_id,las=2)
+dev.off()
+
+png(file.path(resdir_boxplots,"Boxplot_INHBA.png"),width=1500,height=1500,res=300)
+boxplot(annot_sel2$INHBA~annot_sel2$sample_id,las=2)
+dev.off()
+
+save(anocol2,annot_sel2,file=file.path(RDataSupdir,"annot_anocol_final.RData")) 
+```
+
+### Generate figures: UMAP with correlation heatmap
+
+```{r, out.width="30%", echo=FALSE}
+load(file.path(RDatadir,"umap.RData"))
+load(file.path(RDataSupdir,"annot_anocol_final.RData"))
+
+for(j in 1:ncol(anocol2))
+    {
+    png(file.path(resdir_UMAPs,paste0("UMAP_",colnames(anocol2)[j],".png")), height=1350,width=1200,res=300)
+  if(class(annot_sel2[1,colnames(anocol2)[j]])=="numeric"){
+    plot((umap_res), col=alpha(anocol2[,j],0.3),pch=20,cex=0.6,
+         main=paste0(colnames(anocol2)[j]," min=",round(min(annot_sel2[,colnames(anocol2)[j]]),digits=3)," max=",round(max(annot_sel2[,colnames(anocol2)[j]]),digits=3)),
+         xlab="component 1",ylab="component 2")} else {
+             plot((umap_res), col=alpha(anocol2[,j],0.3),pch=20,cex=0.6,
+         main=paste0(colnames(anocol2)[j]),
+         xlab="component 1",ylab="component 2")
+             if(colnames(anocol2)[j]=="sample_id"){
+                 #Plot persister with add plot since there is too low cell number
+                 pers = which(annot_sel2$sample_id=="HBCx95_persister_6souris")
+                 points(umap_res[pers,], col=alpha(anocol2[pers,j],0.5),pch=20,cex=0.6)
+                 
+             }
+         }
+  
+  
+    dev.off()
+    }
 ```
 
 ### Heatmap for a gene list of interest
 
 ```{r , out.width="30%",include=FALSE}
-mat <- LogCounts[rownames(LogCounts) %in% KEGG_TGFB_FC2,]
-tmat <- t(mat)
-
-distHC <- c("distPearson","distCosine","euclidean","maximum","manhattan","canberra","binary","minkowski")[3]
-methHC <- c("ward","ward.D","ward.D2","single","complete","average")[3]
-if(distHC=="distPearson")	d <- distPearson(tmat)
-if(distHC=="distCosine")	d <- distCosine(tmat)
-if(distHC %in% c("euclidean","maximum","manhattan","canberra","binary","minkowski"))	
-d <- dist(tmat,distHC)
-hc <- hclust(d,method=methHC)
-
-mat.so <- as.matrix(mat[,hc$order])
-
-if(chRangeHM){
-  for(i in 1:nrow(mat.so)){
-    mat.so[i,] <- geco.changeRange(mat.so[i,],newmin=0,newmax=1)
-  }
+for(log2FC_threshold in log2FC_thresholds){
+    load(file.path(RDataSupdir,paste0("Enrichment_test_persister_6_vs_UNT_vs_UNT_MSigDB_logFC",round(log2FC_threshold,2),".RData")))
+    tgfb_genes = unlist(str_split(Overexpressed$Deregulated_genes[which(Overexpressed$Gene.Set=="KEGG_TGF_BETA_SIGNALING_PATHWAY")],
+                                  pattern=";"))
+    mat <- LogCounts[rownames(LogCounts) %in% tgfb_genes,]
+    tmat <- t(mat)
+    
+    distHC <- c("distPearson","distCosine","euclidean","maximum","manhattan","canberra","binary","minkowski")[3]
+    methHC <- c("ward","ward.D","ward.D2","single","complete","average")[3]
+    if(distHC=="distPearson")	d <- distPearson(tmat)
+    if(distHC=="distCosine")	d <- distCosine(tmat)
+    if(distHC %in% c("euclidean","maximum","manhattan","canberra","binary","minkowski"))	
+        d <- dist(tmat,distHC)
+    hc <- hclust(d,method=methHC)
+    
+    mat.so <- as.matrix(mat[,hc$order])
+    
+    if(chRangeHM){
+        for(i in 1:nrow(mat.so)){
+            mat.so[i,] <- geco.changeRange(mat.so[i,],newmin=0,newmax=1)
+        }
+    }
+    
+    png(file.path(resdir_heatmaps,paste0("Clustering_TGFB_logFC",round(log2FC_threshold,2),"_",distHC,"_",methHC,".png")), height=4000,width=4000,res=300)
+    geco.hclustAnnotHeatmapPlot(x=(mat.so),
+                                hc=hc,
+                                hmColors=hmColors,
+                                anocol=anocol2[hc$order,c(1:5)],#[,ncol(cc.col):1]
+                                xpos=c(0.15,0.9,0.164,0.885),
+                                ypos=c(0.1,0.5,0.5,0.6,0.62,0.95),
+                                dendro.cex=0.01,
+                                xlab.cex=1,
+                                hmRowNames=TRUE,
+                                hmRowNames.cex=0.5
+    )
+    dev.off()
 }
-
-png(file.path(resSUBdir_heatmaps,paste0("Clustering_TGFB_","_",distHC,"_",methHC,".png")), height=4000,width=4000,res=300)
-geco.hclustAnnotHeatmapPlot(x=(mat.so),
-                            hc=hc,
-                            hmColors=hmColors,
-                            anocol=anocol2[hc$order,c(1:5)],#[,ncol(cc.col):1]
-                            xpos=c(0.15,0.9,0.164,0.885),
-                            ypos=c(0.1,0.5,0.5,0.6,0.62,0.95),
-                            dendro.cex=0.01,
-                            xlab.cex=1,
-                            hmRowNames=TRUE,
-                            hmRowNames.cex=0.5
-)
-dev.off()
-
 ```
 
 
 ###Study the top gene lists of persister cells
 
 ```{r , out.width="30%",include=FALSE}
+for(log2FC_threshold in log2FC_thresholds){
 
-library(gplots)
-
-load(file=file.path(RDatadir,"Enrichment_Overexpressed_persister_6_vs_UNT.RData"))
-load(file=file.path(RDatadir,"LogCounts.RData"))
-load(file=file.path(RDatadir,"RawCounts_features.RData"))
-
-gene_metadata = feature
-  how_many_top <- 20
-		significPathway <- Overexpressed[Overexpressed$Class %in% c("c2_curated","c6_oncogenic","hallmark"),]
-
-	significPathway <- significPathway[1:how_many_top,]
-	significPathway_breast <- 	significPathway[grep(pattern = "BREAST", significPathway$Gene.Set),]
-
-			
-	#Calculate average expression for every cells on genes of each top pathways
-	pathway_mat <- matrix(0,nrow=how_many_top,ncol=length(annot_sel2$sample_id))		
-	pathway_names <- c()		
-	for(i in 1:how_many_top){
-	  gene_list <- unlist(strsplit(significPathway$Deregulated_genes[i],";"))
-	  mat <- LogCounts[gene_metadata$Symbol %in% gene_list,]
-	  pathway_mat[i,] <- apply(mat,2,mean) 
-	  pathway_names[i] <-significPathway$Gene.Set[i]
-	}		
-  
-row.names(pathway_mat) <- pathway_names
-tmat <- t(pathway_mat)
-
-selected_cells = annot_sel2$cell_id[which(annot_sel2$louvain_partition %in% c("C1","C5"))]
-rownames(tmat) = colnames(LogCounts)
-tmat = tmat[selected_cells,]
-distHC <- c("distPearson","distCosine","euclidean","maximum","manhattan","canberra","binary","minkowski")[3]
-methHC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
-if(distHC=="distPearson")	d <- distPearson(tmat)
-if(distHC=="distCosine")	d <- distCosine(tmat)
-if(distHC %in% c("euclidean","maximum","manhattan","canberra","binary","minkowski"))	d <- dist(tmat,distHC)
-hc <- hclust(d,method=methHC)
-mat.so <- pathway_mat[,hc$order]
- 
-if(chRangeHM){
-	for(i in 1:nrow(mat.so)){
-		mat.so[i,] <- geco.changeRange(mat.so[i,],newmin=0,newmax=1)
-	}
+    load(file.path(RDataSupdir,paste0("Enrichment_test_persister_6_vs_UNT_vs_UNT_MSigDB_logFC",round(log2FC_threshold,2),".RData")))
+    
+    gene_metadata = feature
+    how_many_top <- 20
+    significPathway <- Overexpressed[Overexpressed$Class %in% c("c2_curated","c6_oncogenic","hallmark"),]
+    
+    significPathway <- significPathway[1:how_many_top,]
+    significPathway_breast <- 	significPathway[grep(pattern = "BREAST", significPathway$Gene.Set),]
+    
+    
+    #Calculate average expression for every cells on genes of each top pathways
+    pathway_mat <- matrix(0,nrow=how_many_top,ncol=length(annot_sel2$sample_id))		
+    pathway_names <- c()		
+    for(i in 1:how_many_top){
+        gene_list <- unlist(strsplit(as.character(significPathway$Deregulated_genes[i]),";"))
+        mat <- LogCounts[gene_metadata$Symbol %in% gene_list,]
+        pathway_mat[i,] <- apply(mat,2,mean) 
+        pathway_names[i] <-significPathway$Gene.Set[i]
+    }		
+    
+    row.names(pathway_mat) <- pathway_names
+    tmat <- t(pathway_mat)
+    
+    selected_cells = annot_sel2$cell_id[which(annot_sel2$louvain_partition %in% c("C1","C5"))]
+    rownames(tmat) = colnames(LogCounts)
+    tmat = tmat[selected_cells,]
+    distHC <- c("distPearson","distCosine","euclidean","maximum","manhattan","canberra","binary","minkowski")[3]
+    methHC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
+    if(distHC=="distPearson")	d <- distPearson(tmat)
+    if(distHC=="distCosine")	d <- distCosine(tmat)
+    if(distHC %in% c("euclidean","maximum","manhattan","canberra","binary","minkowski"))	d <- dist(tmat,distHC)
+    hc <- hclust(d,method=methHC)
+    mat.so <- pathway_mat[,hc$order]
+    
+    if(chRangeHM){
+        for(i in 1:nrow(mat.so)){
+            mat.so[i,] <- geco.changeRange(mat.so[i,],newmin=0,newmax=1)
+        }
+    }
+    rowClust <- hclust(as.dist(1 - cor(t(mat.so))), method = "ward.D")
+    
+    png(file.path(resdir_heatmaps,paste0("Clustering_Pathways_Persisters_homemade_logFC",log2FC_threshold,"_",distHC,"_",methHC,".png")), height=1000,width=1000,res=150)
+    geco.hclustAnnotHeatmapPlot(x=(mat.so[rowClust$order,]),
+                                hc=hc,
+                                hmColors=hmColors,
+                                anocol=anocol2[hc$order,c(1,8)],#[,ncol(cc.col):1]
+                                xpos=c(0.15,0.9,0.164,0.885),
+                                ypos=c(0.1,0.5,0.5,0.6,0.62,0.95),
+                                dendro.cex=0.1,
+                                xlab.cex=0.6,
+                                hmRowNames=TRUE,
+                                hmRowNames.cex=0.5
+    )
+    dev.off()
+    nclust <- 5
+    pdf(file.path(resdir_heatmaps,paste0("Clustering_Pathways_PersisterslogFC",log2FC_threshold,"_.pdf")))
+    gplots::heatmap.2(pathway_mat,ColSideColors=anocol2[,1],trace="none")
+    dev.off()
+    
 }
-rowClust <- hclust(as.dist(1 - cor(t(mat.so))), method = "ward.D")
-
-png(file.path(resSUBdir_heatmaps,paste0("Clustering_Pathways_Persisters_homemade_",distHC,"_",methHC,".png")), height=1000,width=1000,res=150)
-geco.hclustAnnotHeatmapPlot(x=(mat.so[rowClust$order,]),
-							 hc=hc,
-							 hmColors=hmColors,
-							 anocol=anocol2[hc$order,c(1,8)],#[,ncol(cc.col):1]
-							 xpos=c(0.15,0.9,0.164,0.885),
-							 ypos=c(0.1,0.5,0.5,0.6,0.62,0.95),
-							 dendro.cex=0.1,
-							 xlab.cex=0.6,
-							 hmRowNames=TRUE,
-							 hmRowNames.cex=0.5
-							 )
-dev.off()
-nclust <- 5
-pdf(file.path(resSUBdir_heatmaps,"Clustering_Pathways_Persisters.pdf"))
-heatmap.2(pathway_mat,ColSideColors=anocol2[,1],trace="none")
-dev.off()
-
 ```
