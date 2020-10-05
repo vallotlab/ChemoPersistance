@@ -194,11 +194,6 @@ annotCol <- c("sample_id","total_features","cell_cycle","rRNA","clustCol4",
 pcaText <- FALSE
 annotText <- "sample_id"
 
-for(i in annotCol){
-    if(i %in% rownames(LogCounts)) annot_sel2[,i] <- LogCounts[which(rownames(LogCounts)==i),]
-}
-gc()
-
 ribo <- grepl("^RP[SL]",gene_metadata$Symbol)
 annot_sel2$rRNA <- apply(LogCounts[ribo,],2,mean)
 
