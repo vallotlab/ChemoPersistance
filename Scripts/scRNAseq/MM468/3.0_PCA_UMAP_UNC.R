@@ -440,8 +440,10 @@ test <- annot_subset %>% mutate(ExpressionGroup=factor(ExpressionGroup,le)) %>% 
                                                                      "MM468_5FU5_day171","MM468_5FU3_day202"))) %>% group_by(sample_id,ExpressionGroup) %>% summarise(freq=n()) 
 
 
-png(file.path(resSUBdir,"ExpressionGroup_time.png"),width=1500,height=1500,res=300)
-ggplot(test) +geom_col(aes(y=freq,x=sample_id,fill=ExpressionGroup)) +scale_fill_manual(values=c("slateblue4","honeydew1","paleturquoise4","gold","mediumseagreen","mediumorchid")) + theme_classic() + theme(axis.text.x = element_text(angle = 90)) 
+png(file.path(resSUBdir,"Louvain_partition_time.png"),width=1500,height=1500,res=300)
+ggplot(test) +geom_col(aes(y=freq,x=sample_id, fill=louvain_partition)) + 
+  scale_fill_manual(values=corres_cluster$cluster) + 
+  theme_classic() + theme(axis.text.x = element_text(angle = 90)) 
 dev.off()
 
 #Plot repartition of Expression groups with time with Louvain

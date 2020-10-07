@@ -180,7 +180,6 @@ annot_sel2$clustCol4 <- paste("C",match(cutree(hc_PCA,nclust),unique(cutree(hc_P
 ```
 
 ```{r, echo=FALSE}
-annotCol <- c("sample_id","total_features","Seurat_cluster","cell_cycle")
 pcaText <- FALSE
 annotText <- "sample_id"
 hcText <- "sample_id"  
