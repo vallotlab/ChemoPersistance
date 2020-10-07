@@ -55,7 +55,7 @@ annot10k_housekeeping <- annot10k[house_keeping_genes_row,]
 house_keeping_genes_region = annot10k_housekeeping$ID
 
 bivalent_genes <- c("BMP6","LAMB1", "VIM", "FOSL1", "ABCC4",
-                    "COL4A2", "KRT14", "TGFB1", "KLK10" )
+                    "COL4A2", "KRT14", "TGFB1", "KLK10")
 bivalent_genes_row <- c(16677, 20736, 25943, 29195, 34181, 34369, 41923, 46164, 46727)
 annot10k_bivalent <- annot10k[bivalent_genes_row,]
 

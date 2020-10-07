@@ -1,4 +1,52 @@
-#Global environment variable
+###### LIBRARIES ######
+
+# Packages
+library(ChromSCape)
+library(devtools)
+library(DropletUtils)
+library(irlba)
+library(corrplot)
+library(scatterplot3d)
+library(scater)
+library(Rtsne)
+library(ccRemover)
+library(viridis)
+library(colorRamps)
+library(RColorBrewer)
+library(edgeR)
+library(gplots)
+library(ggplot2)
+library(RColorBrewer)
+library(genefilter)
+library(xtable)
+library(WriteXLS)
+library(data.table)
+library(stringr)
+library(limma)
+library(edgeR)
+library(monocle3)
+library(dplyr)
+library(Seurat)
+library(dendextend)
+library(clValid)
+library(ape)
+library(ConsensusClusterPlus)
+library(monocle3)
+library(Seurat)
+library(Matrix)
+library(genefilter)
+library(ggpubr)
+library(eulerr)
+
+#Geco packages
+library(geco.supervised)
+library(geco.RNAseq)
+library(geco.utils)
+library(geco.visu)
+library(scTools)
+library(geco.unsupervised)
+
+###### GLOBAL VARIABLES ######
 pcaText <- TRUE
 annotText <- "Sample"
 hcText <- "Name"  ## column used in hierarchical clustering # change names from Sample_x to actual sample name
@@ -7,6 +55,7 @@ centering <- c("none","mean","median")[1]
 ##Hierarchical clustering
 distHC <- c("distPearson","distCosine","euclidean","maximum","manhattan","canberra","binary","minkowski")[1]
 methHC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
+GencodeVersion <- ""
 
 ##ConsClust
 repsCC <- 1000
@@ -16,6 +65,7 @@ clusterAlgCC <- c("hc","pam","km","kmdist")[1]
 distCC <- c("pearson","distCosine","euclidean","manhattan")[1]
 innerLinkageCC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
 finalLinkageCC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
+useClusterInfoFromUnsupp <- TRUE
 
 ## Heatmap
 chRangeHM <-FALSE # Should be set to TRUE for expression data, FALSE for methylation data
@@ -27,7 +77,7 @@ corColors <- colorRampPalette(c("royalblue","white","indianred1"))(256)
 maxKHC <- 10
 maxKCC <- 10
 
-# Pathways
+###### PATHWAYS ######
 hallmark_EMT <- c("FN1","TAGLN","NNMT","ELN","INHBA","MYL9","FBLN2","TGFBR3","CRLF1")
 
 KEGG_TGFB_FC1 <- c("INHBB","INHBA","CREBBP","ROCK1","ID4","RBL2","SMAD4","SMAD1","SMAD2","MAPK1","SMURF1","EP300","TGFB2","CDKN2B","PPP2R1A","SMAD5","FST","TGFBR2","SMAD7","BMPR2","BMPR1B","ACVR2B","ACVR2A","SP1","BMP6","THBS1")
@@ -61,3 +111,16 @@ TGFB_KEGG <- c('CHRD', 'NOG', 'NBL1', 'MICOS10-NBL1', 'GREM1', 'GREM2'
                'EP300', 'SP1', 'TGIF1', 'TGIF2', 'MYC', 'CDKN2B', 'PITX2', 'RBX1',
                'CUL1', 'SKP1', 'MAPK1', 'MAPK3', 'IFNG', 'TNF', 'RHOA', 'ROCK1', 
                'PPP2R1B', 'PPP2R1A', 'PPP2CA', 'PPP2CB', 'RPS6KB1', 'RPS6KB2')
+
+###### ANNOTATION ######
+organism <- "hg38"
+MSigDBFile1 <- file.path(here(),"annotation","hg38.MSIG.gs.rda")
+MSigDBFile2 <-file.path(here(),"annotation","hg38.MSIG.ls.rda")
+# load(file=file.path(RDataSupdir,paste("Supervised_res_object_edgeR.Rdata",sep="")))
+load(MSigDBFile1)
+load(MSigDBFile2)
+MSIG.ls = hg38.MSIG.ls
+MSIG.gs = hg38.MSIG.gs
+
+###### OPTIONS ######
+options(stringsAsFactors=FALSE, width=180)

@@ -1,42 +1,4 @@
-##############################################################################################
-###############			LIBRARIES AND FUNCTIONS					##############################
-##############################################################################################
-options(stringsAsFactors=FALSE, width=180)
-organism <- "hg38"
-GencodeVersion <- ""
-
 library(here)
-library(edgeR)
-library(ggplot2)
-library(rgl)
-library(RColorBrewer)
-library(genefilter)
-library(xtable)
-library(WriteXLS)
-library(data.table)
-library(stringr)
-library(limma)
-library(edgeR)
-library(Matrix)
-library(dplyr)
-library(corrplot)
-library(geco.unsupervised)
-library(scatterplot3d)
-library(scater)
-library(Rtsne)
-library(ccRemover)
-library(colorRamps)
-library(geco.supervised)
-library(viridis)
-library(colorRamps)
-library(monocle3)
-library(dplyr)
-library(WriteXLS)
-library(clValid)
-library(ape)
-library(ConsensusClusterPlus)
-library(eulerr)
-
 library(doParallel)  # for parallel backend to foreach
 library(foreach)     # for parallel processing with for loops
 library(caret)       # for general model fitting
@@ -45,32 +7,12 @@ library(ipred)
 library(mlbench)
 library(doMC)
 
-library(geco.supervised)
-library(geco.RNAseq)
-library(geco.supervised)
-library(geco.utils)
-library(geco.visu)
-library(scTools)
-
-MSigDBFile1 <- "/media/pprompsy/LaCie/InstitutCurie/Documents/GitLab/ChromSCape_devel/data/hg38.MSIG.gs.rda" 
-MSigDBFile2 <- "/media/pprompsy/LaCie/InstitutCurie/Documents/GitLab/ChromSCape_devel/data/hg38.MSIG.ls.rda"
-load(MSigDBFile1)
-load(MSigDBFile2)
-MSIG.ls = hg38.MSIG.ls
-MSIG.gs = hg38.MSIG.gs
-
-### PARAMETERS	
-####################################################################
-useClusterInfoFromUnsupp <- TRUE ## TRUE , FALSE
-
 ####################################################################
 ### DIRECTORIES and FILES 
 ####################################################################
 
 ######VARIABLESs
-setwd("")
 source(file.path(here(),"Scripts","global_var.R"))
-options(width=180)
 
 maindir = file.path(here(),"output","scRNAseq")
 resdir <- file.path(maindir,"PDX","Supervised","Co_occurence");if(!file.exists(resdir)){dir.create(resdir)}
@@ -123,7 +65,7 @@ unt_pers_all_cells =  c(mygps$persister, myrefs$UNT)
 cell_list = c("unt_pers_cells_151","unt_pers_all_cells")
 
 # Different set of genes
-load(file.path(maindir,"common_over_genes_pers_vs_unt.RData"))
+load(file.path(maindir,"common_over_genes_pers_vs_unt_log2FC1.58.RData"))
 
 predictor_genes_MM468 = c("KRT16","KRT17","AKR1B1","TPM2","AL161431.1","TPM2","IGFL2-AS1")
 predictor_genes_MM468 = intersect(predictor_genes_MM468,rownames(LogCounts))

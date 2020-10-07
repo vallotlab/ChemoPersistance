@@ -1,106 +1,41 @@
+##### PATHS ##### 
+library(here)
+library(doParallel)  # for parallel backend to foreach
+library(foreach)     # for parallel processing with for loops
+library(caret)       # for general model fitting
+library(rpart)       # for fitting decision trees
+library(ipred)  
+library(mlbench)
+source(file.path(here(),"Scripts","global_var.R"))
+source(file.path(here(),"Scripts","functions.R"))
 
-##############################################################################################
-###############			LIBRARIES AND FUNCTIONS					##############################
-##############################################################################################
-options(stringsAsFactors=FALSE, width=180)
-organism <- "hg38"
-GencodeVersion <- ""
-chRangeHM=T
-distHC <- c("distPearson","distCosine","euclidean","maximum","manhattan","canberra","binary","minkowski")[1]
-methHC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
-
-##ConsClust
-repsCC <- 1000
-pItemCC <- 0.8
-pFeatureCC <- 1
-clusterAlgCC <- c("hc","pam","km","kmdist")[1]
-distCC <- c("pearson","distCosine","euclidean","manhattan")[1]
-innerLinkageCC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
-finalLinkageCC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
-
-## Heatmap
-chRangeHM <-TRUE # Should be set to TRUE for expression data, FALSE for methylation data
-hmColors <- colorRampPalette(c("royalblue","white","indianred1"))(256)
-corColors <- colorRampPalette(c("royalblue1","white","indianred1"))(256)
-
-library(geco.supervised);
-library(geco.utils)
-library(geco.visu)
-library(edgeR); library(ggplot2); library(rgl); library(RColorBrewer); library(genefilter); library(xtable); library(geco.RNAseq); library(WriteXLS); library(data.table); library(stringr); library(limma); library(edgeR);library(dplyr) ####################################################################
-library(scTools)
-library(Matrix)
-library(dplyr)
-library(corrplot)
-library(geco.utils)
-library(geco.visu)
-library(geco.unsupervised)
-library(scatterplot3d)
-library(scater)
-library(Rtsne)
-library(ccRemover)
-library(colorRamps)
-library(geco.supervised)
-library(viridis)
-library(colorRamps)
-library(geco.supervised);  library(edgeR);
-library(ggplot2); library(rgl); library(RColorBrewer);
-library(genefilter); library(xtable); library(geco.RNAseq);
-library(WriteXLS); library(data.table); library(stringr);
-library(limma); library(edgeR)
-library(scTools)
-library(monocle3)
-library(dplyr)
-library(WriteXLS)
-library(clValid)
-library(ape)
-library(ConsensusClusterPlus)
-devtools::load_all("/media/pprompsy/LaCie/InstitutCurie/Documents/GitLab/R_packages/GeCo.Rpackages/geco.visu/")
-MSigDBFile1 <- "/media/pprompsy/LaCie/InstitutCurie/Documents/GitLab/ChromSCape_devel/data/hg38.MSIG.gs.rda" 
-MSigDBFile2 <- "/media/pprompsy/LaCie/InstitutCurie/Documents/GitLab/ChromSCape_devel/data/hg38.MSIG.ls.rda"
-load(MSigDBFile1)
-load(MSigDBFile2)
-MSIG.ls = hg38.MSIG.ls
-MSIG.gs = hg38.MSIG.gs
-
-### PARAMETERS	
-####################################################################
-
-
-useClusterInfoFromUnsupp <- TRUE ## TRUE , FALSE
-####################################################################
-### DIRECTORIES and FILES 
-####################################################################
-
-######VARIABLES
-options(width=180)
-maindir <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/"
-setwd(maindir)
-resdir <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/Results_MM468/Supervised_persister/Co_occurence_MM468";if(!file.exists(resdir)){dir.create(resdir)}
-RDatadir <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/Results_MM468/Supervised_persister/RData/"
-RDatadir_unsup <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/Results_MM468/Unsupervised_persister//RData/"
+maindir = file.path(here(),"output","scRNAseq")
+resdir <- file.path(maindir,"MM468","Persister","Supervised","Co_occurence");if(!file.exists(resdir)){dir.create(resdir)}
+resdir_heatmaps <- file.path(resdir,"Heatmaps");if(!file.exists(resdir_heatmaps)){dir.create(resdir_heatmaps)}
+resdir_predictors <- file.path(resdir,"Predictors");if(!file.exists(resdir_predictors)){dir.create(resdir_predictors)}
+resdir_gini <- file.path(resdir,"Gini");if(!file.exists(resdir_gini)){dir.create(resdir_gini)}
+resdir_venns <- file.path(resdir,"Venns");if(!file.exists(resdir_venns)){dir.create(resdir_venns)}
+RDatadir <- file.path(maindir,"MM468","Persister","Supervised","RData")
+RDatadir_unsup <- file.path(maindir,"MM468","Persister","Unsupervised","RData")
 RDataSupdir <-  file.path(resdir,"RData");if(!file.exists(RDataSupdir)){dir.create(RDataSupdir)}
 
-FC_threshold <- 2
+log2FC_thresholds <- log2(c(2,3,4))
 Signif_threshold <- 0.01
 
 ## Import annotation file
 load(file.path(RDatadir,"Supervised_res_object_edgeR.Rdata"))
-load(file.path(RDatadir_unsup,"gene_cell_annot_persister.RData"))
-load(file.path(RDatadir_unsup,"anocol.RData"))
-metadata <- annot_int[,-c(1,6:16)]
-
-# overexpressed_pers_genes = my.res$Symbol[which(my.res$log2FC.C2_pers > 2 & my.res$qval.C2_pers < 0.1)]
-# save(overexpressed_pers_genes, file = file.path(RDatadir,"overexpressed_pers_genes_MM468.RData"))
-load(file = file.path(RDatadir,"overexpressed_pers_genes_MM468.RData"))
+load(file.path(RDatadir,"annot_anocol_final.RData"))
+metadata <- annot_int
+rownames(metadata) <- metadata$cell_id
 
 ####################################################################
 ### COMPARISON SETUP  
 ####################################################################
 table(metadata[,c("sample_id","louvain_partition")])
- mygps <- list(
+mygps <- list(
 'persister'=metadata[which(metadata$louvain_partition %in% c("C2") ),"cell_id"]
 )
- myrefs <- list(
+myrefs <- list(
   'UNT'=metadata[which(metadata$louvain_partition %in% c("C10") ),"cell_id"]
  )
 refs <- names(myrefs) 
@@ -112,30 +47,28 @@ unt_pers_cells = c(mygps$persister, myrefs$UNT) # subsample
 ##############################################################################################
 ###############			LOAD FILES			        			##############################
 ##############################################################################################
-load(file = file.path("Results_MM468/Unsupervised_persister/RData/LogCounts.RData"))
-LogCounts_pers_ini = LogCounts[,unt_pers_cells]
-rm(LogCounts);gc()
+load(file = file.path(RDatadir_unsup,"persister_LogCounts.RData"))
+LogCounts_pers_ini = persister_LogCounts[,unt_pers_cells]
+rm(persister_LogCounts);gc()
 
 # Different set of genes
-load("common_over_genes_pers_vs_unt.RData")
+load(file.path(maindir,"common_over_genes_pers_vs_unt.RData"))
 predictor_genes_PDX = c("FAM234A","7SK","MTRNR2L8","MIF","NME1-NME2","KRTCAP2","RPL17")
 predictor_genes_PDX = intersect(predictor_genes_PDX,rownames(LogCounts_pers_ini))
 diff_genes <-  c("NNMT","TAGLN","INHBA","KRT6A","KRT6B","KRT16","KRT14","KLK10","KLK5","KLK7")
 diff_genes_figures <-  c("BMP6","CDKN2B","TGFBR2","TGFBR3","TGFB2","INHBA","INHBB","SMAD2","TGFB1","FOSL1","NNMT","KRT14","KLK10","KLK5","TAGLN","NNMT","ELN","TGFBR3")
 gene_lists <- c("common_overexpressed_genes","overexpressed_pers_genes","predictor_genes_PDX","diff_genes","diff_genes_figures")
 
-
-set.seed(2047);
-pers_500 = sample(mygps$persister,500,replace = F)
-unt_500 = sample(myrefs$UNT,500,replace = F)
+set.seed(47);
+pers_500 = sample(mygps$persister, 500, replace = F)
+unt_500 = sample(myrefs$UNT, 500, replace = F)
 unt_pers_cells_500 = c(pers_500,unt_500)
-rownames(anocol) = annot_int$cell_id
+rownames(anocol2) = annot_int$cell_id
 
 # TEST MULTIPLE COMBINATION : PERS GENES / PATHWAYS - UNTvsPers6 / UNTvsPersAll
 for(gene_sel in gene_lists){
-    
     genes = get(gene_sel)
-    anocol. = anocol[unt_pers_cells_500,]
+    anocol. = anocol2[unt_pers_cells_500,]
   
     mat <- LogCounts_pers_ini[rownames(LogCounts_pers_ini) %in% genes,unt_pers_cells_500]
     tmat <- t(mat)
@@ -157,12 +90,12 @@ for(gene_sel in gene_lists){
       }
     }
     gc()
-    png(file.path(resdir,paste0("Cooccurrence_pers_genes_",gene_sel,"_",distHC,"_",methHC,".png")), height=4000,width=4000,res=300)
+    png(file.path(resdir_heatmaps,paste0("Cooccurrence_pers_genes_",gene_sel,"_",distHC,"_",methHC,".png")), height=4000,width=4000,res=300)
     
     geco.hclustAnnotHeatmapPlot(x=(mat.so),
                                 hc=hc,
                                 hmColors=hmColors,
-                                anocol=anocol.[hc$order,c(1,6)],#[,ncol(cc.col):1]
+                                anocol=anocol.[hc$order,c("sample_id","louvain_partition","total_features")],#[,ncol(cc.col):1]
                                 xpos=c(0.15,0.9,0.164,0.885),
                                 ypos=c(0.1,0.5,0.5,0.6,0.62,0.95),
                                 dendro.cex=0.01,
@@ -175,7 +108,7 @@ for(gene_sel in gene_lists){
 
 ########## ########## ########## ########## 
 ########## Most co-occuring in DMSO ########## 
-anocol. = anocol[unt_pers_cells,]
+anocol. = anocol2[unt_pers_cells,]
 genes = overexpressed_pers_genes
 mat <- LogCounts_pers_ini[rownames(LogCounts_pers_ini) %in% genes,unt_pers_cells]
 hist(colSums(mat),breaks=150)
@@ -193,7 +126,7 @@ hist(coocurrence_persister_genes_score$coocurrence_score,breaks=150)
 coocurrence_persister_genes_score$sample = factor(coocurrence_persister_genes_score$sample,levels=
                                                     c("Untreated","Persister"))
 
-png(file.path(resdir,paste0("Coocurrence_persiter_genes_score_violin.png")),height=1000,width=1500,res=300)
+png(file.path(resdir_gini,paste0("Coocurrence_persiter_genes_score_violin.png")),height=1000,width=1500,res=300)
 ggplot(coocurrence_persister_genes_score, aes(x=sample,y=coocurrence_score,
                                               fill=sample)) + 
   geom_violin(alpha=0.8) + theme_classic() + scale_fill_manual(values=as.character(unique(anocol.[,"louvain_partition"])[2:1])) +
@@ -201,7 +134,7 @@ ggplot(coocurrence_persister_genes_score, aes(x=sample,y=coocurrence_score,
   ggpubr::stat_compare_means(method = "t.test",ref.group = "Untreated")
 dev.off()
 
-png(file.path(resdir,paste0("Coocurrence_persiter_genes_score_density.png")),height=1000,width=1500,res=300)
+png(file.path(resdir_gini,paste0("Coocurrence_persiter_genes_score_density.png")),height=1000,width=1500,res=300)
 ggplot(coocurrence_persister_genes_score, aes(coocurrence_score,fill=sample,color=sample)) +
   geom_density(alpha=0.2) + theme_classic() + 
   scale_color_manual(values=as.character(unique(anocol.[,"louvain_partition"])[2:1])) +
@@ -239,7 +172,7 @@ for(i in 1:2){
       mat.so[i,] <- geco.changeRange(mat.so[i,],newmin=0,newmax=1)
     }
   }
-png(file.path(resdir,paste0("Cooccurrence_pers_genes_heatmap_",name,".png")), height=8000,width=8000,res=600)
+png(file.path(resdir_heatmaps,paste0("Cooccurrence_pers_genes_heatmap_",name,".png")), height=8000,width=8000,res=600)
 geco.hclustAnnotHeatmapPlot(x=(mat.so),
                             hc=hc_genes,
                             hmColors=hmColors,
@@ -257,22 +190,12 @@ dev.off()
 ###########################################################
 ## Minimum set of features to find the sample of origin ###
 ###########################################################
-
-library(doParallel)  # for parallel backend to foreach
-library(foreach)     # for parallel processing with for loops
-library(caret)       # for general model fitting
-library(rpart)       # for fitting decision trees
-library(ipred)  
-library(mlbench)
-library(doMC)
-
 mat = as.data.frame(as.matrix(t(LogCounts_pers_ini[rownames(LogCounts_pers_ini) %in% 
                                             overexpressed_pers_genes,
                                           unt_pers_cells_500])))
 dim(mat)
 class = rep(1,length(unt_pers_cells_500))
 class[grep("initial",unt_pers_cells_500)] = 0
-
 
 # load the data
 # define the control using a random forest selection function
@@ -342,7 +265,7 @@ dev.off()
 
 
 ######## GINI coefficients ############
-load("common_over_genes_pers_vs_unt.RData")
+load(file.path(maindir,"common_over_genes_pers_vs_unt.RData"))
 # house_keeping_genes = c("GAPDH","VGF","CCNA2","LMNA","GAPDH","UBB","UBC")
 # From  https://www.genomics-online.com/resources/16/5049/housekeeping-genes/
 # Eisenberg, Levanon: “Human housekeeping genes, revisited.
@@ -362,7 +285,7 @@ Gin_unt = edgeR::gini(t(bin_mat[]))
 Gini_focus = Gin_unt[which(names(Gin_unt) %in% c(house_keeping_genes,common_overexpressed_genes))]
 Gini_focus = data.frame(Gini_focus,0)
 colorlist = ifelse(rownames(Gini_focus) %in% house_keeping_genes, "grey", "red")
-pdf(file.path(resdir,"GiniScores_common_pers_genes_hk_inInitial.pdf"),width = 12)
+pdf(file.path(resdir_gini,"GiniScores_common_pers_genes_hk_inInitial.pdf"),width = 12)
 plot(0,0,type="n",xlim=c(-0.06,1.06), ylim=c(0,2), yaxt = 'n', main ="Gini Scores")
 for (i in 1:length(Gini_focus$Gini_focus)) { stripchart(Gini_focus$Gini_focus[i],
                             add = T, bg = colorlist[i],
@@ -382,7 +305,7 @@ Gin_pers = edgeR::gini(t(bin_mat_pers))
 Gin_pers_focus = Gin_pers[which(names(Gin_pers) %in% c(house_keeping_genes,common_overexpressed_genes))]
 Gin_pers_focus = data.frame(Gin_pers_focus,0)
 colorlist = ifelse(rownames(Gin_pers_focus) %in% house_keeping_genes, "grey", "red")
-pdf(file.path(resdir,"GiniScores_common_pers_genes_hk_inPersister.pdf"),width = 12)
+pdf(file.path(resdir_gini,"GiniScores_common_pers_genes_hk_inPersister.pdf"),width = 12)
 plot(0,0,type="n",xlim=c(-0.06,1.06), ylim=c(0,2), yaxt = 'n', main ="Gini Scores")
 for (i in 1:length(Gin_pers_focus$Gin_pers_focus)) { stripchart(Gin_pers_focus$Gin_pers_focus[i],
                                                         add = T, bg = colorlist[i],
@@ -401,7 +324,7 @@ difference_in_homogeneity = cbind(Gini_focus[which(rownames(Gini_focus) %in% gen
 difference_in_homogeneity$gain_homogeneity = difference_in_homogeneity$Gini_focus - difference_in_homogeneity$Gin_pers_focus
 difference_in_homogeneity$Gene = rownames(difference_in_homogeneity)
 
-png(file.path(resdir,paste0("Top6_Gain_in_homogeneity.png")), height=1500,width=1500,res=300)
+png(file.path(resdir_gini,paste0("Top6_Gain_in_homogeneity.png")), height=1500,width=1500,res=300)
 difference_in_homogeneity %>% dplyr::arrange(dplyr::desc(gain_homogeneity)) %>%  head %>%
   dplyr::mutate(Gene = factor(Gene,levels=Gene)) %>% ggplot() +
   geom_bar(aes(x=Gene,y=gain_homogeneity),stat="identity") +
@@ -464,19 +387,19 @@ odd_ratio_mat = odd_ratio_mat[jackpot_genes,jackpot_genes]
 odd_ratio_mat[odd_ratio_mat<0]=0
 odd_ratio_mat[lower.tri(odd_ratio_mat)] = 0
 
-png(file.path(resdir,paste0("LogOddRatio_rarity.png")), height=4000,width=4000,res=400)
+png(file.path(resdir_gini,paste0("LogOddRatio_rarity.png")), height=4000,width=4000,res=400)
 gplots::heatmap.2((odd_ratio_mat),Rowv = F,Colv = F
                   , trace="none", density = "none", scale ="none",
                   col =rev(inferno(20)))
 dev.off()
 
-png(file.path(resdir,paste0("Pvalue_rarity.png")), height=4000,width=4000,res=400)
+png(file.path(resdir_gini,paste0("Pvalue_rarity.png")), height=4000,width=4000,res=400)
 gplots::heatmap.2((fisher_pvalue_mat),Rowv = F,Colv = F
                   , trace="none", density = "none", scale ="none",
                   col =rev(inferno(20)))
 dev.off()
 
-png(file.path(resdir,paste0("Qvalue_rarity.png")), height=4000,width=4000,res=400)
+png(file.path(resdir_gini,paste0("Qvalue_rarity.png")), height=4000,width=4000,res=400)
 gplots::heatmap.2((fisher_qvalue_mat),Rowv = F,Colv = F
                   , trace="none", density = "none", scale ="none",
                   col =rev(inferno(20)))
@@ -487,13 +410,12 @@ odd_ratio_mat <- geco.changeRange(odd_ratio_mat,newmin=0,newmax=1)
 
 combined_mat = fisher_pvalue_mat + odd_ratio_mat
 
-png(file.path(resdir,paste0("Combined_pvalue_logOddRatio_rarity.png")), height=4000,width=4000,res=400)
+png(file.path(resdir_gini,paste0("Combined_pvalue_logOddRatio_rarity.png")), height=4000,width=4000,res=400)
 gplots::heatmap.2((combined_mat),Rowv = F,Colv = F
                   , trace="none", density = "none", scale ="none",
                   col =rev(inferno(20)))
  dev.off()
 
-library(RColorBrewer)
 p = list()
 for(gene in jackpot_genes){
   tab = as.data.frame(mat[gene,])
@@ -504,7 +426,7 @@ for(gene in jackpot_genes){
     theme_classic() + ggtitle(gene) + theme(legend.position = "None")
 }
 
-pdf(file.path(resdir,"histogram_transcript_abundance_marker_genes_in_untreated.pdf"))
+pdf(file.path(resdir_gini,"histogram_transcript_abundance_marker_genes_in_untreated.pdf"))
 gridExtra::grid.arrange(p[[1]],p[[2]],p[[3]],p[[4]],p[[5]],p[[6]],p[[7]],p[[8]],p[[9]],nrow = 3)
 gridExtra::grid.arrange(p[[10]],p[[11]],p[[12]],p[[13]],p[[14]],p[[15]],p[[16]],p[[17]],nrow = 3)
 dev.off()
@@ -515,7 +437,7 @@ top =sort(fisher_pvalue_mat[],decreasing = T)[1:5]
 for(gene_k in rownames(fisher_pvalue_mat)){
   for(gene_i in rownames(fisher_pvalue_mat)){
       if(fisher_pvalue_mat[gene_i,gene_k] %in% top){
-        png(file.path(resdir,paste0(gene_i,"_",gene_k,"_dotplot.png")), height=1500,width=1500,res=300)
+        png(file.path(resdir_gini,paste0(gene_i,"_",gene_k,"_dotplot.png")), height=1500,width=1500,res=300)
         tab = as.data.frame(cbind(mat[gene_i,],mat[gene_k,]))
         tab$cell_id = rownames(tab)
         colnames(tab)[1:2] = c("A","B")
@@ -531,13 +453,6 @@ for(gene_k in rownames(fisher_pvalue_mat)){
   }
 }
 
-
-
-
-
-
-library(eulerr)
-if(!dir.exists(file.path(resdir,"Venns"))) dir.create(file.path(resdir,"Venns"))
 for(gene_k in jackpot_genes){
   p=list()
   for(gene_i in jackpot_genes){
@@ -562,7 +477,7 @@ for(gene_k in jackpot_genes){
       p[[paste0(gene_i,"_",gene_k)]] = e
      }
   }
-  pdf(file.path(resdir,"Venns",paste0("Venns_",gene_k,".pdf")))
+  pdf(file.path(resdir_venns,paste0("Venns_",gene_k,".pdf")))
   gridExtra::grid.arrange(plot(p[[1]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),plot(p[[2]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),plot(p[[3]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),
                           plot(p[[4]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),plot(p[[5]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),plot(p[[6]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),
                           plot(p[[7]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),plot(p[[8]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),plot(p[[9]],fills = c("#D6BA1C", "#C20606", "#DBDBDB"), labels = list(cex = c(0.5,0.5,1.5))),nrow = 3)
@@ -574,7 +489,7 @@ for(gene_k in jackpot_genes){
 }
 
 
-png(file.path(resdir,"Venns",paste0("Venn_KLK10_KLK5_KRT14.png")), height=1500,width=1500,res=300)
+png(file.path(resdir_venns,paste0("Venn_KLK10_KLK5_KRT14.png")), height=1500,width=1500,res=300)
 v = data.frame("KLK10" =(bin_mat["KLK10",] > 0),
                "KLK5"= (bin_mat["KLK5",] > 0),
                "KRT14" = (bin_mat["KRT14",] > 0),
@@ -582,7 +497,6 @@ v = data.frame("KLK10" =(bin_mat["KLK10",] > 0),
 e = euler(v,shape = "ellipse")
 plot(e, quantities = TRUE,fills = c("#4b164bff", "#fbefafff","#f66f5eec","#DBDBDB"))
 dev.off()
-
 
 fisher_pvalue_mat = fisher_pvalue_mat_all[house_keeping_genes,house_keeping_genes]
 
@@ -605,25 +519,24 @@ odd_ratio_mat = odd_ratio_mat_all[house_keeping_genes,house_keeping_genes]
 odd_ratio_mat[odd_ratio_mat<0]=0
 odd_ratio_mat[lower.tri(odd_ratio_mat)] = 0
 
-png(file.path(resdir,paste0("LogOddRatio_rarity_HK.png")), height=4000,width=4000,res=400)
+png(file.path(resdir_gini,paste0("LogOddRatio_rarity_HK.png")), height=4000,width=4000,res=400)
 gplots::heatmap.2((odd_ratio_mat),Rowv = F,Colv = F
                   , trace="none", density = "none", scale ="none",
                   col =rev(inferno(20)))
 dev.off()
 
-png(file.path(resdir,paste0("Pvalue_rarity_HK.png")), height=4000,width=4000,res=400)
+png(file.path(resdir_gini,paste0("Pvalue_rarity_HK.png")), height=4000,width=4000,res=400)
 gplots::heatmap.2((fisher_pvalue_mat),Rowv = F,Colv = F
                   , trace="none", density = "none", scale ="none",
                   col =rev(inferno(20)))
 dev.off()
 
-png(file.path(resdir,paste0("Qvalue_rarity_HK.png")), height=4000,width=4000,res=400)
+png(file.path(resdir_gini,paste0("Qvalue_rarity_HK.png")), height=4000,width=4000,res=400)
 gplots::heatmap.2((fisher_qvalue_mat),Rowv = F,Colv = F
                   , trace="none", density = "none", scale ="none",
                   col =rev(inferno(20)))
 dev.off()
 
-library(RColorBrewer)
 p = list()
 for(gene in house_keeping_genes){
   tab = as.data.frame(mat[gene,])
@@ -634,23 +547,16 @@ for(gene in house_keeping_genes){
     theme_classic() + ggtitle(gene) + theme(legend.position = "None")
 }
 
-pdf(file.path(resdir,"histogram_transcript_abundance_hk.pdf"))
+pdf(file.path(resdir_gini,"histogram_transcript_abundance_hk.pdf"))
 gridExtra::grid.arrange(p[[1]],p[[2]],p[[3]],p[[4]],p[[5]],p[[6]],p[[7]],p[[8]],p[[9]],nrow = 3)
 gridExtra::grid.arrange(p[[10]],p[[11]],p[[12]],p[[13]],nrow = 3)
 dev.off()
-
-png(file.path(resdir,paste0("Odd_ratio_hk_genes.png")), height=4000,width=4000,res=400)
-gplots::heatmap.2((high_odd_ratio_mat),Rowv = F,Colv = F
-                  , trace="none", density = "none", scale ="none",
-                  col =rev(inferno(20)))
-dev.off()
-
 
 ######## CO-OCCURRENCE Persister Genes in DMSO / Persisters -UMAP #############
 load(file.path(RDatadir_unsup,"umap_persister.RData"))
 umap_res. = umap_res[rownames(coocurrence_persister_genes_score),]
 anocol. = geco.annotToCol4(coocurrence_persister_genes_score)
-png(file.path(resdir,paste0("UMAP_",colnames(anocol.)[1],".png")), height=1350,width=1200,res=300)
+png(file.path(resdir_gini,paste0("UMAP_",colnames(anocol.)[1],".png")), height=1350,width=1200,res=300)
 plot((umap_res.), col=alpha(anocol.[,1],0.3),pch=20,cex=0.6,
      main=paste0(colnames(anocol.)[1]," min=",round(min(coocurrence_persister_genes_score[,colnames(anocol.)[1]]),digits=3),
                  " max=",round(max(coocurrence_persister_genes_score[,colnames(anocol.)[1]]),digits=3)),
@@ -674,7 +580,7 @@ coocurrence_persister_genes_score_common$sample = factor(coocurrence_persister_g
 umap_res. = umap_res[rownames(coocurrence_persister_genes_score_common),]
 anocol. = geco.annotToCol4(coocurrence_persister_genes_score_common)
 
-png(file.path(resdir,paste0("UMAP_",colnames(anocol.)[1],"_common.png")), height=1350,width=1200,res=300)
+png(file.path(resdir_gini,paste0("UMAP_",colnames(anocol.)[1],"_common.png")), height=1350,width=1200,res=300)
 plot((umap_res.), col=alpha(anocol.[,1],0.3),pch=20,cex=0.6,
      main=paste0(colnames(anocol.)[1]," min=",round(min(coocurrence_persister_genes_score_common[,colnames(anocol.)[1]]),digits=3),
                  " max=",round(max(coocurrence_persister_genes_score_common[,colnames(anocol.)[1]]),digits=3)),
@@ -697,13 +603,12 @@ vars = vars %>% tidyr::gather("sample","Gene Variance",-gene)
 vars = vars %>% dplyr::mutate(sample = factor(sample,levels=c("Untreated","Persister")))
 vars[1:length(overexpressed_pers_genes),"Cells 'ON' (%)"] = rowSums(bin_mat[,501:1000]) /5
 vars[(length(overexpressed_pers_genes)+1):(2*length(overexpressed_pers_genes)),"Cells 'ON' (%)"] = rowSums(bin_mat[,1:500])/5
-png(file.path(resdir,paste0("Variability_untreated_persister_rawcounts_min1.png")), height=1500,width=2000,res=300)
+png(file.path(resdir_gini,paste0("Variability_untreated_persister_rawcounts_min1.png")), height=1500,width=2000,res=300)
 vars %>% ggplot(aes(x=sample,y=`Gene Variance`)) + geom_violin(alpha=0.75,aes(fill=sample)) +
   geom_jitter(alpha = 0.5,aes(color=`Cells 'ON' (%)`),width = 0.15) + theme_classic() +
   scale_fill_manual(values=as.character(unique(anocol[unt_pers_cells_500,"louvain_partition"])[2:1])) +
   scale_color_continuous(type="viridis")
 dev.off()
-
 
 vars %>% dplyr::filter((sample == "Untreated" & `Gene Variance` > 0.2 & `Cells 'ON' (%)` > 50) | 
                          (sample == "Persister" & `Gene Variance` < 0.05  & `Cells 'ON' (%)` > 50) )
@@ -716,29 +621,9 @@ vars = apply(bin_mat, MARGIN = 2, var)
 coocurrence_persister_genes_score$homogeneity = 1-vars
 anocol. = geco.annotToCol4(coocurrence_persister_genes_score,plotLegend=T,
                            plotLegendFile=file.path(resdir,"Annotation_legends.pdf"))
-png(file.path(resdir,paste0("UMAP_homogeneity.png")), height=1350,width=1200,res=300)
+png(file.path(resdir_gini,paste0("UMAP_homogeneity.png")), height=1350,width=1200,res=300)
 plot((umap_res.), col=alpha(anocol.[,"homogeneity"],0.3),pch=20,cex=0.6,
      main=paste0("homogeneity"," min=",round(min(coocurrence_persister_genes_score[,"homogeneity"]),digits=3),
                  " max=",round(max(coocurrence_persister_genes_score[,"homogeneity"]),digits=3)),
      xlab="component 1",ylab="component 2")
-dev.off()
-
-
-###################################
-###################################
-# Intersection overexpressed in MM468 vs in PDX
-MM468_over = overexpressed_pers_genes
-master=new.env()
-load("Results_PDX/Supervised/RData/overexpressed_pers6_genes_vs_UNT.RData",master)
-PDX_over = master$overexpressed_pers_genes
- 
-common_overexpressed_genes = intersect(MM468_over,PDX_over)
-save(common_overexpressed_genes, file = "common_over_genes_pers_vs_unt.RData")
-A_B = length(common_overexpressed_genes)
-A = length(MM468_over) - A_B 
-B = length(PDX_over) - A_B
-venn_c  = c(A=A, B=B, "A&B"=A_B)
-e = euler(venn_c)
-png(file.path(resdir,paste0("Intersection_PDX_MM468_Pers_Genes.png")), height=1350,width=1200,res=300)
-plot(e,fills = c("#009688", "#438a5e", "#326E5BFF"))
 dev.off()

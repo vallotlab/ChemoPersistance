@@ -469,6 +469,7 @@ for(log2FC_threshold in log2FC_thresholds){
         tabdir,paste0("Number_differentially_expressed_genes_per_group_logFC_",
                       round(log2FC_threshold,2),".csv")),row.names=F,quote=F,sep=";")
 }
+save(my.res, file=file.path(RDataSupdir,paste("Supervised_res_object_edgeR.Rdata",sep="")))
 print("summaryedgeRCompare Done")
  
 ```

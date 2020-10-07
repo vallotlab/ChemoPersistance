@@ -19,7 +19,7 @@ library(scales)
 
 QCdir <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/Results_MM468/QC/"
 resdir <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/Results_MM468"
-resSUBdir <- file.path(resdir, paste0("Unsupervised_persister")) ; if(!file.exists(resSUBdir)){dir.create(resSUBdir)}
+resSUBdir <- file.path(resdir, paste0("Unsupervised_UNC")) ; if(!file.exists(resSUBdir)){dir.create(resSUBdir)}
 RDatadir <- file.path(resSUBdir,"RData") ; if(!file.exists(RDatadir)){dir.create(RDatadir)}
 
 ################################################################################
@@ -104,9 +104,9 @@ NormCounts <- t(t(exprs(cds)) /  pData(cds)[, 'Size_Factor'])
 UNC_LogCounts <- log(NormCounts+1,2)
 rm(NormCounts)
 
-save(persister_LogCounts,file=file.path(RDatadir,"UNC_LogCounts.RData"))
+save(UNC_LogCounts,file=file.path(RDatadir,"UNC_LogCounts.RData"))
 RawCounts = exprs(cds)
-save(RawCounts,file=file.path(RDatadir,"persister_RawCounts.RData"))
+save(RawCounts,file=file.path(RDatadir,"UNC_RawCounts.RData"))
 save(annot_int,gene_metadata,file=file.path(RDatadir,"gene_cell_annot_UNC.RData"))
 # rownames(NormCounts) <- gene_metadata$Symbol
 # colnames(NormCounts) <- annot_sel$cell_id
@@ -155,10 +155,10 @@ save(annot_int,gene_metadata,file=file.path(RDatadir,"gene_cell_annot_UNC.RData"
 ################################################################################################
 setwd(RDatadir)
 load("../../../common_over_genes_pers_vs_unt.RData")
-load("persister_LogCounts.RData")
-load("gene_cell_annot_persister.RData")
-load("umap_persister.RData")
-load("pca_persister.RData")
+load("UNC_LogCounts.RData")
+load("gene_cell_annot_UNC.RData")
+load("umap_UNC.RData")
+load("pca_UNC.RData")
 load("../../../common_over_genes_pers_vs_unt.RData")
 
 annot_int$sample_id <- as.character(annot_int$sample_id)
@@ -170,32 +170,32 @@ hcText <- "sample_id"  ## column used in hierarchical clustering # change names 
 
 #Common palette for all MM468 experiments
 control <- c("#E0E0E0","#BDBDBD","#757575")
-persister_color <- c("#DCEDC8","#9CCC65","#4CAF50","#009688")
+UNC_color <- c("#DCEDC8","#9CCC65","#4CAF50","#009688")
 treated_UNC_color <- c("#2196F3", "#4DD0E1" )
 treated_GSKJ4_color <- c("#C2185B", "#EC407A" )
 res_color <- c("#FFEB3B","#FFC107","#FF9800","#FF5722")
-color_MM468 <- c(control[2],persister_color,res_color[c(1:3)], treated_UNC_color)
+color_MM468 <- c(control[2],UNC_color,res_color[c(1:3)], treated_UNC_color)
 
 #Adding annotation for expression of genes of interest
-annot_int$KRT14 <- persister_LogCounts["KRT14",annot_int$cell_id]
-annot_int$KLK10 <- persister_LogCounts["KLK10",annot_int$cell_id]
-annot_int$MKI67 <- persister_LogCounts["MKI67",annot_int$cell_id]
-annot_int$NNMT <- persister_LogCounts["NNMT",annot_int$cell_id]
-annot_int$TGFB1 <- persister_LogCounts["TGFB1",annot_int$cell_id]
-annot_int$TGFBR1 <- persister_LogCounts["TGFBR1",annot_int$cell_id]
-annot_int$TGFBR3 <- persister_LogCounts["TGFBR3",annot_int$cell_id]
-annot_int$TGFBR2 <- persister_LogCounts["TGFBR2",annot_int$cell_id]
-annot_int$INHBA <- persister_LogCounts["INHBA",annot_int$cell_id]
-annot_int$INHBB <- persister_LogCounts["INHBB",annot_int$cell_id]
-annot_int$VIM <- persister_LogCounts["VIM",annot_int$cell_id]
+annot_int$KRT14 <- UNC_LogCounts["KRT14",annot_int$cell_id]
+annot_int$KLK10 <- UNC_LogCounts["KLK10",annot_int$cell_id]
+annot_int$MKI67 <- UNC_LogCounts["MKI67",annot_int$cell_id]
+annot_int$NNMT <- UNC_LogCounts["NNMT",annot_int$cell_id]
+annot_int$TGFB1 <- UNC_LogCounts["TGFB1",annot_int$cell_id]
+annot_int$TGFBR1 <- UNC_LogCounts["TGFBR1",annot_int$cell_id]
+annot_int$TGFBR3 <- UNC_LogCounts["TGFBR3",annot_int$cell_id]
+annot_int$TGFBR2 <- UNC_LogCounts["TGFBR2",annot_int$cell_id]
+annot_int$INHBA <- UNC_LogCounts["INHBA",annot_int$cell_id]
+annot_int$INHBB <- UNC_LogCounts["INHBB",annot_int$cell_id]
+annot_int$VIM <- UNC_LogCounts["VIM",annot_int$cell_id]
 
 for(i in common_overexpressed_genes){
-  annot_int[,i] = persister_LogCounts[i,annot_int$cell_id]
+  annot_int[,i] = UNC_LogCounts[i,annot_int$cell_id]
 }
 
 annotCol = unique(c(annotCol, common_overexpressed_genes))
 ribo <- grepl("^RP[SL]",gene_metadata$Symbol)
-annot_int$rRNA <- apply(persister_LogCounts[ribo,annot_int$cell_id],2,mean)
+annot_int$rRNA <- apply(UNC_LogCounts[ribo,annot_int$cell_id],2,mean)
 
 #Generate color annotation & legend
 anocol <- geco.annotToCol4(annotS=annot_int[,annotCol],annotT=annot_int,plotLegend=T,
@@ -406,7 +406,7 @@ dev.off()
 # )
 # dev.off()
 
-subset_LogCounts <- persister_LogCounts[,annot_subset$cell_id]
+subset_LogCounts <- UNC_LogCounts[,annot_subset$cell_id]
 save(subset_LogCounts,hc_PCA,anocol_subset,annot_subset,gene_metadata,file=file.path(RDatadir,"subset_analysis.RData"))
 
 
@@ -550,7 +550,7 @@ resdir <- "~/Desktop/scRNAseq_data_local/Results_MM468/Supervised";if(!file.exis
 
 RDataSupdir <-  file.path(resdir,"RData");if(!file.exists(RDataSupdir)){dir.create(RDataSupdir)}
 
-load(file=file.path(RDataSupdir,"Overexpressed_persisterall_vs_DMSO.RData"))
+load(file=file.path(RDataSupdir,"Overexpressed_UNCall_vs_DMSO.RData"))
 how_many_top <- 15
 significPathway <- Overexpressed[Overexpressed$Class %in% c("c2_curated","c5_GO","hallmark"),]
 
@@ -592,7 +592,7 @@ if(chRangeHM){
 #rowClust <- hclust(as.dist(1 - cor(t(mat.so))), method = "ward.D")
 rowClust <- hclust(dist((mat.so)), method = "ward.D")
 
-png(file.path(resSUBdir,paste0("Clustering_",how_many_top,"Pathways_PersistersAll_",distHC,"_",methHC,".png")), 
+png(file.path(resSUBdir,paste0("Clustering_",how_many_top,"Pathways_UNCsAll_",distHC,"_",methHC,".png")), 
     height=3000,width=2000,res=300)
 par(oma=c(2,5,3,7))
 geco.hclustAnnotHeatmapPlot(x=(mat.so[rowClust$order,]),
