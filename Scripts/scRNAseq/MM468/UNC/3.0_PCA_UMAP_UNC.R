@@ -1,66 +1,35 @@
 
-library(devtools)
-library(dplyr)
-library(irlba)
-library(corrplot)
-library(geco.utils)
-library(geco.visu)
-library(ConsensusClusterPlus)
-library(geco.unsupervised)
-library(ccRemover)
-library(colorRamps)
-library(viridis)
-library(RColorBrewer)
-library(monocle3)
-library(scTools) 
-library(scales)
-
+library(here)
 # Directories -------------------------------------------------------------
+maindir= here()
+resdir <- file.path(maindir,"output","scRNAseq","MM468","UNC")
+QCdir <- file.path(maindir,"output","scRNAseq","QC")
+resdir <- file.path(resdir, "Unsupervised") ; if(!file.exists(resdir)){dir.create(resdir)}
+resdir_UMAP <- file.path(resdir,"UMAP") ; if(!file.exists(resdir_UMAP)){dir.create(resdir_UMAP)}
+resdir_boxplots <- file.path(resdir,"boxplots") ; if(!file.exists(resdir_boxplots)){dir.create(resdir_boxplots)}
+resdir_heatmaps = file.path(resdir,"Heatmaps"); if(!dir.exists(resdir_heatmaps)) dir.create(resdir_heatmaps)
+resdir_sub = file.path(resdir,"sub500"); if(!dir.exists(resdir_sub)) dir.create(resdir_sub)
+RDatadir <- file.path(resdir,"RData") ; if(!file.exists(RDatadir)){dir.create(RDatadir)}
 
-QCdir <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/Results_MM468/QC/"
-resdir <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/Results_MM468"
-resSUBdir <- file.path(resdir, paste0("Unsupervised_UNC")) ; if(!file.exists(resSUBdir)){dir.create(resSUBdir)}
-RDatadir <- file.path(resSUBdir,"RData") ; if(!file.exists(RDatadir)){dir.create(RDatadir)}
-
-################################################################################
-# Parameters --------------------------------------------------------------
-################################################################################
-
-## packages Seurat or scater attach an enormous amount of bystander packages, they cannot be loaded in the same session without crashing the DLLs.
-##Hierarchical clustering
-distHC <- c("distPearson","distCosine","euclidean","maximum","manhattan","canberra","binary","minkowski")[1]
-methHC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
-
-##ConsClust
-repsCC <- 10
-pItemCC <- 0.8
-pFeatureCC <- 1
-clusterAlgCC <- c("hc","pam","km","kmdist")[1]
-distCC <- c("pearson","distCosine","euclidean","manhattan")[1]
-innerLinkageCC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
-finalLinkageCC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
-
-## Heatmap
-chRangeHM <-TRUE # Should be set to TRUE for expression data, FALSE for methylation data
-hmColors <- colorRampPalette(c("royalblue","white","indianred1"))(256)
-corColors <- colorRampPalette(c("royalblue1","white","indianred1"))(256)
+source(file.path(maindir,"Scripts","global_var.R"))
 
 ################################################################################################
 # PCA, UMAP and louvain clustering with Monocle 3  on all cells for the paper------------------
 ################################################################################################
-
-setwd(RDatadir)
-load("MM468.RData")
-load("gene_cell_annot.RData")
+load(file.path(maindir,"output","scRNAseq","MM468","Persister","Unsupervised","RData","MM468.RData"))
+load(file.path(RDatadir,"UNC_gene_cell_annot.RData"))
 annot_sel <- annot
 
-#annot_int <- annot_sel[annot_sel$sample_id %in% c("MM468_initial","MM468_5FU3_day50","MM468_5FU3_day77","MM468_5FU3_day202","MM468_5FU5_day67","MM468_5FU5_day171","MM468_5FU6_day33","MM468_5FU6_day214") & annot_sel$doublet_score<10000,]
-annot_int <- annot_sel[annot_sel$sample_id %in% c("MM468_initial","MM468_UNC_day33","MM468_5FU6_UNC_day33","MM468_5FU6_day33","MM468_5FU3_day50","MM468_5FU5_day67","MM468_5FU5_day171","MM468_5FU6_day214","MM468_5FU3_day202") & annot_sel$doublet_score<10000,]
-#annot_sel <- annot[annot$sample_id %in% c("MM468_DMSO5_day67","MM468_UNC_day33","MM468_5FU6_UNC_day33","MM468_5FU6_day33") & annot_sel$doublet_score<10000,]
+samples_UNC = c("MM468_initial","MM468_UNC_day33",
+                "MM468_5FU6_UNC_day33","MM468_5FU6_day33",
+                "MM468_5FU3_day50","MM468_5FU5_day67",
+                "MM468_5FU5_day171","MM468_5FU6_day214",
+                "MM468_5FU3_day202")
+annot_int <- annot_sel[annot_sel$sample_id %in% samples_UNC
+                          & annot_sel$doublet_score<10000,]
 
 annot_int$sample_id <- as.character(annot_int$sample_id)
 rownames(annot_int) <- annot_int$cell_id
-
 
 cds <- new_cell_data_set(Signal[row.names(gene_metadata),row.names(annot_int)],
                          cell_metadata = annot_int,
@@ -80,8 +49,6 @@ plot_cells(cds, color_cells_by="doublet_score", group_cells_by="partition",label
 
 plot_cells(cds, color_cells_by = "total_counts")
 
-# par(mfrow=c(3,2))
-# plot_cells(cds,genes=c("EPCAM","MME","ITGA6","ALDH1A1"),group_cells_by="partition",show_trajectory_graph=F)
 plot_cells(cds,genes=c("PCNA"),group_cells_by="partition",show_trajectory_graph=F)
 plot_cells(cds,genes=c("VIM"),group_cells_by="partition",show_trajectory_graph=F)
 plot_cells(cds,genes=c("KRT17"),group_cells_by="partition",show_trajectory_graph=F)
@@ -90,9 +57,6 @@ plot_cells(cds,genes=c("NNMT"),group_cells_by="partition",show_trajectory_graph=
 
 umap_res <- cds@reducedDims[[2]]
 pca_object <- cds@reducedDims[[1]]
-
-# umap_res <- cds@int_colData$reducedDims[[2]] # with R3.6.2 and higher for SummarizedExperiment, otherwise cds@reducedDims[[2]]
-# pca_object <- cds@int_colData$reducedDims[[1]]
 
 annot_int$louvain_partition <- cds@clusters[[1]]$partitions
 annot_int$louvain_partition <- paste0("C",annot_int$louvain_partition)
@@ -108,62 +72,58 @@ save(UNC_LogCounts,file=file.path(RDatadir,"UNC_LogCounts.RData"))
 RawCounts = exprs(cds)
 save(RawCounts,file=file.path(RDatadir,"UNC_RawCounts.RData"))
 save(annot_int,gene_metadata,file=file.path(RDatadir,"gene_cell_annot_UNC.RData"))
-# rownames(NormCounts) <- gene_metadata$Symbol
-# colnames(NormCounts) <- annot_sel$cell_id
-
-
 
 # ################################################################################
 # # Cell cycle scoring with Seurat  ##############################################
 # ################################################################################
 # 
-# library(Seurat)
-# 
-# # A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can
-# # segregate this list into markers of G2/M phase and markers of S phase
-# s.genes <- cc.genes$s.genes
-# g2m.genes <- cc.genes$g2m.genes
-# 
-# # Create our Seurat object and complete the initalization steps
-# rownames(Signal) <- gene_metadata$Symbol
-# 
-# marrow <- CreateSeuratObject(counts = Signal[,row.names(annot_sel)],meta.data=annot_sel)
-# marrow <- NormalizeData(marrow)
-# marrow <- FindVariableFeatures(marrow, selection.method = "vst")
-# marrow <- ScaleData(marrow, features = rownames(marrow))
-# marrow <- RunPCA(marrow, features = VariableFeatures(marrow), ndims.print = 1:10, nfeatures.print = 10)
-# DimPlot(marrow, reduction = "pca")
-# DimHeatmap(marrow, dims = 1:3, cells = 1000, balanced = TRUE)
-# ElbowPlot(marrow)
-# marrow <- FindNeighbors(marrow, dims = 1:20)
-# marrow  <- FindClusters(marrow, resolution = 0.5)
-# marrow <- RunUMAP(marrow, dims = 1:20)
-# 
-# #DimPlot(marrow, reduction = "umap")
-# 
-# marrow <- CellCycleScoring(marrow, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
-# #RidgePlot(marrow, features = c("PCNA", "TOP2A", "MCM6", "MKI67"), ncol = 2)
-# 
-# annot_seurat <- data.frame (cell_id=as.character(names(marrow$Phase)),cell_cycle=as.character((marrow$Phase)))
-# 
-# annot_sel$cell_cycle <- marrow$Phase[match(annot_sel$cell_id,annot_seurat$cell_id)]
-# 
-# save(LogCounts,gene_metadata,annot_sel,file=file.path(RDatadir,"forAnalysis.RData"))
-# 
+library(Seurat)
+
+# A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can
+# segregate this list into markers of G2/M phase and markers of S phase
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+
+# Create our Seurat object and complete the initalization steps
+rownames(Signal) <- gene_metadata$Symbol
+
+marrow <- CreateSeuratObject(counts = Signal[,row.names(annot_sel)],meta.data=annot_sel)
+marrow <- NormalizeData(marrow)
+marrow <- FindVariableFeatures(marrow, selection.method = "vst")
+marrow <- ScaleData(marrow, features = rownames(marrow))
+marrow <- RunPCA(marrow, features = VariableFeatures(marrow), ndims.print = 1:10, nfeatures.print = 10)
+DimPlot(marrow, reduction = "pca")
+DimHeatmap(marrow, dims = 1:3, cells = 1000, balanced = TRUE)
+ElbowPlot(marrow)
+marrow <- FindNeighbors(marrow, dims = 1:20)
+marrow  <- FindClusters(marrow, resolution = 0.5)
+marrow <- RunUMAP(marrow, dims = 1:20)
+
+#DimPlot(marrow, reduction = "umap")
+
+marrow <- CellCycleScoring(marrow, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#RidgePlot(marrow, features = c("PCNA", "TOP2A", "MCM6", "MKI67"), ncol = 2)
+
+annot_seurat <- data.frame (cell_id=as.character(names(marrow$Phase)),cell_cycle=as.character((marrow$Phase)))
+
+annot_sel$cell_cycle <- marrow$Phase[match(annot_sel$cell_id,annot_seurat$cell_id)]
+
+save(LogCounts,gene_metadata,annot_sel,file=file.path(RDatadir,"forAnalysis.RData"))
+
 ################################################################################################
 ###### Parameters for à façon plots of results on all cells--  #################################
 ################################################################################################
-setwd(RDatadir)
-load("../../../common_over_genes_pers_vs_unt.RData")
-load("UNC_LogCounts.RData")
-load("gene_cell_annot_UNC.RData")
-load("umap_UNC.RData")
-load("pca_UNC.RData")
-load("../../../common_over_genes_pers_vs_unt.RData")
+load(file.path(maindir,"output","scRNAseq","MM468_PDX","common_over_genes_pers_vs_unt_log2FC1.58.RData"))
+load(file.path(RDatadir,"UNC_LogCounts.RData"))
+load(file.path(RDatadir,"UNC_gene_cell_annot.RData"))
+load(file.path(RDatadir,"umap_UNC.RData"))
+load(file.path(RDatadir,"pca_UNC.RData"))
 
 annot_int$sample_id <- as.character(annot_int$sample_id)
 
-annotCol <- c("sample_id","total_features","cell_cycle","cons_BC_lenti","doublet_score","louvain_partition","rRNA","MKI67","KRT14","KLK10","NNMT","TGFB1","TGFBR1","INHBA","INHBB","TGFBR2","TGFBR3")
+annotCol <- c("sample_id","total_features","cell_cycle","cons_BC_lenti",
+              "doublet_score","louvain_partition",
+              "rRNA")
 
 annotText <- "sample_id"
 hcText <- "sample_id"  ## column used in hierarchical clustering # change names from Sample_x to actual sample name
@@ -176,35 +136,18 @@ treated_GSKJ4_color <- c("#C2185B", "#EC407A" )
 res_color <- c("#FFEB3B","#FFC107","#FF9800","#FF5722")
 color_MM468 <- c(control[2],UNC_color,res_color[c(1:3)], treated_UNC_color)
 
-#Adding annotation for expression of genes of interest
-annot_int$KRT14 <- UNC_LogCounts["KRT14",annot_int$cell_id]
-annot_int$KLK10 <- UNC_LogCounts["KLK10",annot_int$cell_id]
-annot_int$MKI67 <- UNC_LogCounts["MKI67",annot_int$cell_id]
-annot_int$NNMT <- UNC_LogCounts["NNMT",annot_int$cell_id]
-annot_int$TGFB1 <- UNC_LogCounts["TGFB1",annot_int$cell_id]
-annot_int$TGFBR1 <- UNC_LogCounts["TGFBR1",annot_int$cell_id]
-annot_int$TGFBR3 <- UNC_LogCounts["TGFBR3",annot_int$cell_id]
-annot_int$TGFBR2 <- UNC_LogCounts["TGFBR2",annot_int$cell_id]
-annot_int$INHBA <- UNC_LogCounts["INHBA",annot_int$cell_id]
-annot_int$INHBB <- UNC_LogCounts["INHBB",annot_int$cell_id]
-annot_int$VIM <- UNC_LogCounts["VIM",annot_int$cell_id]
-
-for(i in common_overexpressed_genes){
-  annot_int[,i] = UNC_LogCounts[i,annot_int$cell_id]
-}
-
-annotCol = unique(c(annotCol, common_overexpressed_genes))
 ribo <- grepl("^RP[SL]",gene_metadata$Symbol)
 annot_int$rRNA <- apply(UNC_LogCounts[ribo,annot_int$cell_id],2,mean)
 
 #Generate color annotation & legend
-anocol <- geco.annotToCol4(annotS=annot_int[,annotCol],annotT=annot_int,plotLegend=T,
+anocol <- geco.annotToCol4(annotS=annot_int[,intersect(colnames(annot_int),annotCol)],
+                           annotT=annot_int,plotLegend=T,
                            plotLegendFile=file.path(resSUBdir,"Annotation_legends.pdf"),
                            categCol=NULL, scale_q = "inferno")
 
 #Manual corrections of colors
 indice <- which(annotCol=="sample_id")
-corres <- data.frame(Sample=c("MM468_initial","MM468_5FU3_day50","MM468_5FU3_day77","MM468_5FU5_day67","MM468_5FU6_day33","MM468_5FU6_day214","MM468_5FU3_day202","MM468_5FU5_day171","MM468_5FU6_UNC_day33","MM468_UNC_day33"),color=color_MM468)
+corres <- data.frame(Sample=samples_UNC,color=color_MM468)
 anocol[,indice] <- as.character(corres$color[match(annot_int$sample_id,corres$Sample)])
 
 indice <- which(annotCol=="cons_BC_lineage")

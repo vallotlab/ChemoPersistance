@@ -1,50 +1,5 @@
 
 library(here)
-library(ChromSCape)
-library(devtools)
-library(dplyr)
-library(DropletUtils)
-library(irlba)
-library(corrplot)
-library(ConsensusClusterPlus)
-library(geco.unsupervised)
-library(scatterplot3d)
-library(scater)
-library(Rtsne)
-library(ccRemover)
-library(colorRamps)
-library(geco.supervised)
-library(viridis)
-library(colorRamps)
-library(RColorBrewer)
-library(scTools)
-library(edgeR)
-library(gplots)
-library(ggplot2)
-library(rgl)
-library(RColorBrewer)
-library(genefilter)
-library(xtable)
-library(WriteXLS)
-library(data.table)
-library(stringr)
-library(limma)
-library(edgeR)
-library(monocle3)
-library(dplyr)
-library(WriteXLS)
-library(Seurat)
-library(gplots)
-library(dendextend)
-
-#Geco packages
-library(geco.supervised)
-library(geco.RNAseq)
-library(geco.utils)
-library(geco.visu)
-library(scTools)
-library(geco.unsupervised)
-
 # Directories -------------------------------------------------------------
 maindir= here()
 resdir <- file.path(maindir,"output","scRNAseq","MM468","Persister")
@@ -145,14 +100,13 @@ save(annot_int,gene_metadata,file=file.path(RDatadir,"persister_gene_cell_annot.
 ###### Parameters for à façon plots of results on all cells--  #################################
 ################################################################################################
 
-load(file.path(maindir,"output","scRNAseq","common_over_genes_pers_vs_unt.RData"))
+load(file.path(maindir,"output","scRNAseq","MM468_PDX","common_over_genes_pers_vs_unt_log2FC1.58.RData"))
 load(file.path(RDatadir,"persister_LogCounts.RData"))
 load(file.path(RDatadir,"persister_gene_cell_annot.RData"))
 load(file.path(RDatadir,"umap_persister.RData"))
 load(file.path(RDatadir,"pca_persister.RData"))
 
 annot_int$sample_id <- as.character(annot_int$sample_id)
-
 annotCol <- c("sample_id","total_features","cell_cycle","rRNA","louvain_partition")
 
 annotText <- "sample_id"
@@ -218,12 +172,12 @@ for(j in 1:ncol(anocol))
                            " min=",round(min(annot_int[,colnames(anocol)[j]]),digits=3),
                            " max=",round(max(annot_int[,colnames(anocol)[j]]),digits=3)),
        xlab="component 1",ylab="component 2")
-  dev.off()
   } else{
     plot((umap_res[annot_int$cell_id,]), col=alpha(anocol[,j],0.2),pch=20,
          cex=0.4,main=paste0(colnames(anocol)[j]),
          xlab="component 1",ylab="component 2")
   }
+  dev.off()
 }
 
 indice <- which(annotCol=="cons_BC_lenti")

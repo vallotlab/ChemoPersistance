@@ -11,55 +11,12 @@ knitr::opts_chunk$set(echo = FALSE)
 
 ```{r libraries}
 library(here)
-library(ChromSCape)
-library(devtools)
-library(dplyr)
-library(DropletUtils)
-library(irlba)
-library(corrplot)
-library(ConsensusClusterPlus)
-library(geco.unsupervised)
-library(scatterplot3d)
-library(scater)
-library(Rtsne)
-library(ccRemover)
-library(colorRamps)
-library(geco.supervised)
-library(viridis)
-library(colorRamps)
-library(RColorBrewer)
-library(scTools)
-library(edgeR)
-library(ggplot2)
-library(rgl)
-library(RColorBrewer)
-library(genefilter)
-library(xtable)
-library(WriteXLS)
-library(data.table)
-library(stringr)
-library(limma)
-library(edgeR)
-library(monocle3)
-library(dplyr)
-library(WriteXLS)
-library(Seurat)
-library(gplots)
-
-#Geco packages
-library(geco.supervised)
-library(geco.RNAseq)
-library(geco.utils)
-library(geco.visu)
-library(scTools)
-library(geco.unsupervised)
+source(file.path(here(),"Scripts","global_var.R"))
 ```
 
 
 ```{r paths}
-#Global variables
-source(file.path(here(),"Scripts","global_var.R"))
-
+#Paths
 resdir <- file.path(here(),"output","scRNAseq","PDX")
 QCdir <- file.path(resdir,"QC")
 resSUBdir <- file.path(resdir, "Unsupervised") ; if(!file.exists(resSUBdir)){dir.create(resSUBdir)}
@@ -118,7 +75,7 @@ DimPlot(marrow, reduction = "umap")
 marrow <- CellCycleScoring(marrow, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
 annot_seurat <- data.frame (Seurat_cluster=paste0("C",marrow$seurat_clusters),cell_cycle=marrow$Phase)
 annot_seurat$cell_id <- rownames(annot_seurat)
-if(all.equal(rownames(annot_sel),rownames(annot_seurat))) annot_sel2 <- cbind(annot_sel,annot_seurat) else print("ERROR")
+if(all.equal(rownames(annot_sel),rownames(annot_seurat))) annot_int <- cbind(annot_sel,annot_seurat) else print("ERROR")
 
 FeaturePlot(marrow, features = c("KDM6B", "MGP","IGFBP3","KRT6A","KRT14"))
 rm(marrow); gc()
@@ -131,10 +88,10 @@ rm(marrow); gc()
 
 if(!(file.exists(file.path(RDatadir,"NormCounts.RData")) & file.exists(file.path(RDatadir,"LogCounts.RData")))){
     rownames(Signal) <- gene_metadata$Symbol
-    rownames(annot_sel2) <- annot_sel2$cell_id
+    rownames(annot_int) <- annot_int$cell_id
     rownames(gene_metadata) <- gene_metadata$Symbol
-    cds <- new_cell_data_set(Signal[,rownames(annot_sel2)],
-                             cell_metadata = annot_sel2,
+    cds <- new_cell_data_set(Signal[,rownames(annot_int)],
+                             cell_metadata = annot_int,
                              gene_metadata  = gene_metadata)
     rm(Signal);gc()
     cds <- preprocess_cds(cds,method='PCA', norm_method='size_only',num_dim=50)
@@ -142,14 +99,14 @@ if(!(file.exists(file.path(RDatadir,"NormCounts.RData")) & file.exists(file.path
     cds <- reduce_dimension(cds, reduction_method = 'UMAP')
     cds <-  cluster_cells(cds)
     
-    annot_sel2$louvain_cluster <- cds@clusters[[1]]$clusters
-    annot_sel2$louvain_cluster <- paste0("C",annot_sel2$louvain_cluster)
+    annot_int$louvain_cluster <- cds@clusters[[1]]$clusters
+    annot_int$louvain_cluster <- paste0("C",annot_int$louvain_cluster)
     
-    annot_sel2$louvain_partition <- cds@clusters[[1]]$partition
-    annot_sel2$louvain_partition <- paste0("C",annot_sel2$louvain_partition)
+    annot_int$louvain_partition <- cds@clusters[[1]]$partition
+    annot_int$louvain_partition <- paste0("C",annot_int$louvain_partition)
     
-    umap_res <- cds@reducedDims$UMAP # with R3.6.2 and higher for SummarizedExperiment, otherwise cds@reducedDims[[2]]
-    pca_object <- cds@reducedDims$PCA
+    umap_res <- cds@int_colData$reducedDims$UMAP # with R3.6.2 and higher for SummarizedExperiment, otherwise cds@reducedDims[[2]]
+    pca_object <-cds@int_colData$reducedDims$PCA
     
     save(umap_res,file=file.path(RDatadir,"umap.RData"))
     save(pca_object,file=file.path(RDatadir,"pca.RData"))
@@ -172,18 +129,17 @@ hc_PCA <- hclust(as.dist(1 - cor(mati)), method = "ward.D")
 mat.so.cor <- mati[,hc_PCA$order]
 
 nclust <- 5
-annot_sel2$clustCol5 <- paste("C",match(cutree(hc_PCA,nclust),unique(cutree(hc_PCA,nclust)[hc_PCA$order])),sep="")
+annot_int$clustCol5 <- paste("C",match(cutree(hc_PCA,nclust),unique(cutree(hc_PCA,nclust)[hc_PCA$order])),sep="")
 nclust <- 6
-annot_sel2$clustCol6 <- paste("C",match(cutree(hc_PCA,nclust),unique(cutree(hc_PCA,nclust)[hc_PCA$order])),sep="")
+annot_int$clustCol6 <- paste("C",match(cutree(hc_PCA,nclust),unique(cutree(hc_PCA,nclust)[hc_PCA$order])),sep="")
 nclust <- 4
-annot_sel2$clustCol4 <- paste("C",match(cutree(hc_PCA,nclust),unique(cutree(hc_PCA,nclust)[hc_PCA$order])),sep="")
+annot_int$clustCol4 <- paste("C",match(cutree(hc_PCA,nclust),unique(cutree(hc_PCA,nclust)[hc_PCA$order])),sep="")
 ```
 
 ```{r, echo=FALSE}
 pcaText <- FALSE
 annotText <- "sample_id"
 hcText <- "sample_id"  
-
 load(file.path(RDatadir,"LogCounts.RData"))
 load(file.path(RDatadir,"annot_anocol_final.RData"))
 
@@ -194,31 +150,31 @@ pcaText <- FALSE
 annotText <- "sample_id"
 
 ribo <- grepl("^RP[SL]",gene_metadata$Symbol)
-annot_sel2$rRNA <- apply(LogCounts[ribo,],2,mean)
+annot_int$rRNA <- apply(LogCounts[ribo,],2,mean)
 
-anocol2 <- geco.unsupervised::geco.annotToCol4(annotS=annot_sel2[,annotCol],annotT=annot_sel2,plotLegend=T,plotLegendFile=file.path(resSUBdir,"Annotation_legends.pdf"), scale_q = "inferno")
+anocol <- geco.unsupervised::geco.annotToCol4(annotS=annot_int[,annotCol],annotT=annot_int,plotLegend=T,plotLegendFile=file.path(resSUBdir,"Annotation_legends.pdf"), scale_q = "inferno")
 
 #Common palette for all MM468 experiments
 control <- c("#E0E0E0","#BDBDBD","#757575")
 persister_color <- c("#DCEDC8","#9CCC65","#4CAF50","#009688")
-treated_UNC_color <- c("#2196F3", "#4DD0E1" )
-treated_GSKJ4_color <- c("#C2185B", "#EC407A" )
 res_color <- c("#FFEB3B","#FFC107","#FF9800","#FF5722")
 color_PDX <- c(control[c(1,2)],persister_color[c(1,3)],res_color[c(2)],"#ffcbcb")
 
-corres <- data.frame(PDX=c("HBCx95_v3_UNT","HBCx95_m9_50_REC","HBCx95_persister_2souris","HBCx95_persister_6souris","HBCx95_m30_CAPAR","HBCx95_m6_CAPAS"),color=color_PDX)
-anocol2[,"sample_id"] <- as.character(corres$color[match(annot_sel2$sample_id,corres$PDX)])
+
+samples_PDX = c("HBCx95_v3_UNT","HBCx95_m9_50_REC","HBCx95_persister_2souris","HBCx95_persister_6souris","HBCx95_m30_CAPAR","HBCx95_m6_CAPAS")
+corres <- data.frame(PDX=samples_PDX,color=color_PDX)
+anocol[,"sample_id"] <- as.character(corres$color[match(annot_int$sample_id,corres$PDX)])
 
 corres_cell_cycle <- data.frame(phase=c("G1","G2M","S"),color=c("#e896aaff","#553fc2ff","#5d6c7dff"))
 indice <- which(annotCol=="cell_cycle")
-anocol2[,indice] <- as.character(corres_cell_cycle$color[match(annot_sel2$cell_cycle,corres_cell_cycle$phase)])
+anocol[,indice] <- as.character(corres_cell_cycle$color[match(annot_int$cell_cycle,corres_cell_cycle$phase)])
 
 corres_cluster <- data.frame(phase=c("C1","C2","C3","C4","C5"),color=c("#b9cced","#6a8caf","#438a5e","#e2979c","#ff9c71"))
 indice <- which(annotCol=="clustCol5")
-anocol2[,indice] <- as.character(corres_cluster$color[match(annot_sel2$clustCol5,corres_cluster$phase)])
+anocol[,indice] <- as.character(corres_cluster$color[match(annot_int$clustCol5,corres_cluster$phase)])
 corres_cluster <- data.frame(phase=c("C1","C2","C3","C4","C5"),color=c("#438a5e","#6a8caf","#ff9c71","#e2979c","#b9cced"))
 indice <- which(annotCol=="louvain_partition")
-anocol2[,indice] <- as.character(corres_cluster$color[match(annot_sel2$louvain_partition,corres_cluster$phase)])
+anocol[,indice] <- as.character(corres_cluster$color[match(annot_int$louvain_partition,corres_cluster$phase)])
 
 
 png(file.path(resSUBdir,"Legend_sample_scRNAseq.png"), height=2000,width=1500,res=300)
@@ -232,10 +188,10 @@ barplot(rep(1,5),col=corres_cluster$color, cex.names  =0.8,horiz=F,names.arg=c("
 dev.off()
 
 png(file.path(resSUBdir_boxplots,"Boxplot_rRNA.png"),width=1500,height=1500,res=300)
-boxplot(annot_sel2$rRNA~annot_sel2$sample_id,las=2)
+boxplot(annot_int$rRNA~annot_int$sample_id,las=2)
 dev.off()
 
- save(anocol2,annot_sel2,file=file.path(RDatadir,"annot_anocol_final.RData")) 
+save(anocol,annot_int,file=file.path(RDatadir,"annot_anocol_final.RData")) 
 ```
 
 ###Generate figures: UMAP and clustering with correlation heatmap
@@ -243,20 +199,20 @@ dev.off()
 ```{r, out.width="30%", echo=FALSE}
 load(file.path(RDatadir,"umap.RData"))
 
-for(j in 1:ncol(anocol2))
+for(j in 1:ncol(anocol))
     {
-    png(file.path(resSUBdir_UMAP,paste0("UMAP_",colnames(anocol2)[j],".png")), height=1350,width=1200,res=300)
-  if(class(annot_sel2[1,colnames(anocol2)[j]])=="numeric"){
-    plot((umap_res), col=alpha(anocol2[,j],0.3),pch=20,cex=0.6,
-         main=paste0(colnames(anocol2)[j]," min=",round(min(annot_sel2[,colnames(anocol2)[j]]),digits=3)," max=",round(max(annot_sel2[,colnames(anocol2)[j]]),digits=3)),
+    png(file.path(resSUBdir_UMAP,paste0("UMAP_",colnames(anocol)[j],".png")), height=1350,width=1200,res=300)
+  if(class(annot_int[1,colnames(anocol)[j]])=="numeric"){
+    plot((umap_res), col=alpha(anocol[,j],0.3),pch=20,cex=0.6,
+         main=paste0(colnames(anocol)[j]," min=",round(min(annot_int[,colnames(anocol)[j]]),digits=3)," max=",round(max(annot_int[,colnames(anocol)[j]]),digits=3)),
          xlab="component 1",ylab="component 2")} else {
-             plot((umap_res), col=alpha(anocol2[,j],0.3),pch=20,cex=0.6,
-         main=paste0(colnames(anocol2)[j]),
+             plot((umap_res), col=alpha(anocol[,j],0.3),pch=20,cex=0.6,
+         main=paste0(colnames(anocol)[j]),
          xlab="component 1",ylab="component 2")
-             if(colnames(anocol2)[j]=="sample_id"){
+             if(colnames(anocol)[j]=="sample_id"){
                  #Plot persister with add plot since there is too low cell number
-                 pers = which(annot_sel2$sample_id=="HBCx95_persister_6souris")
-                 points(umap_res[pers,], col=alpha(anocol2[pers,j],0.5),pch=20,cex=0.6)
+                 pers = which(annot_int$sample_id=="HBCx95_persister_6souris")
+                 points(umap_res[pers,], col=alpha(anocol[pers,j],0.5),pch=20,cex=0.6)
                  
              }
          }
@@ -266,24 +222,24 @@ for(j in 1:ncol(anocol2))
     }
 
 # Subsample plot
-scExp = create_scExp(LogCounts,annot_sel2[,1:4])
+scExp = create_scExp(LogCounts,annot_int[,1:4])
 scExp = subsample_scExp(scExp,n_cells = 500)
 umap_res_sub = umap_res[scExp$cell_id,]
-anocol2_sub = anocol2[scExp$cell_id,]
-annot_sel2_sub = annot_sel2[scExp$cell_id,]
+anocol_sub = anocol[scExp$cell_id,]
+annot_int_sub = annot_int[scExp$cell_id,]
 LogCounts_sub = LogCounts[,scExp$cell_id]
 gc()
-save(umap_res_sub,anocol2_sub,annot_sel2_sub,LogCounts_sub, file = file.path(RDatadir,"all_sub_500.RData"))
+save(umap_res_sub,anocol_sub,annot_int_sub,LogCounts_sub, file = file.path(RDatadir,"all_sub_500.RData"))
 
-for(j in 1:ncol(anocol2_sub))
+for(j in 1:ncol(anocol_sub))
     {
-    png(file.path(resSUBdir_sub,paste0("UMAP_sub500_",colnames(anocol2_sub)[j],".png")), height=1350,width=1200,res=300)
-  if(class(annot_sel2_sub[1,colnames(anocol2_sub)[j]])=="numeric"){
-    plot((umap_res_sub), col=alpha(anocol2_sub[,j],0.3),pch=20,cex=0.6,
-         main=paste0(colnames(anocol2_sub)[j]," min=",round(min(annot_sel2_sub[,colnames(anocol2_sub)[j]]),digits=3)," max=",round(max(annot_sel2_sub[,colnames(anocol2_sub)[j]]),digits=3)),
+    png(file.path(resSUBdir_sub,paste0("UMAP_sub500_",colnames(anocol_sub)[j],".png")), height=1350,width=1200,res=300)
+  if(class(annot_int_sub[1,colnames(anocol_sub)[j]])=="numeric"){
+    plot((umap_res_sub), col=alpha(anocol_sub[,j],0.3),pch=20,cex=0.6,
+         main=paste0(colnames(anocol_sub)[j]," min=",round(min(annot_int_sub[,colnames(anocol_sub)[j]]),digits=3)," max=",round(max(annot_int_sub[,colnames(anocol_sub)[j]]),digits=3)),
          xlab="component 1",ylab="component 2")} else {
-  plot((umap_res_sub), col=alpha(anocol2_sub[,j],0.3),pch=20,cex=0.6,
-         main=paste0(colnames(anocol2_sub)[j]),
+  plot((umap_res_sub), col=alpha(anocol_sub[,j],0.3),pch=20,cex=0.6,
+         main=paste0(colnames(anocol_sub)[j]),
          xlab="component 1",ylab="component 2")
          }
   
@@ -295,7 +251,7 @@ png(file.path(resSUBdir_heatmaps,"Clustering_correlation_matrix_PCA_all_annot.pn
 geco.hclustAnnotHeatmapPlot(x=cor(mat.so.cor),
                             hc=hc_PCA,
                             hmColors=corColors,
-                            anocol=anocol2[hc_PCA$order,],#[,ncol(cc.col):1]
+                            anocol=anocol[hc_PCA$order,],#[,ncol(cc.col):1]
                             xpos=c(0.15,0.9,0.164,0.885),
                             ypos=c(0.1,0.5,0.5,0.6,0.62,0.95),
                             dendro.cex=0.1,
@@ -306,7 +262,7 @@ geco.hclustAnnotHeatmapPlot(x=cor(mat.so.cor),
 dev.off()
 
 
-ClusterMembership <- as.data.frame.matrix(table(annot_sel2$sample_id,annot_sel2$louvain_partition))
+ClusterMembership <- as.data.frame.matrix(table(annot_int$sample_id,annot_int$louvain_partition))
 ClusterMembership$pvalue <- 0
 ClusterMembership$sample_id <- rownames(ClusterMembership)
 for(i in c(1:(dim(ClusterMembership)[1]))){
@@ -326,26 +282,16 @@ gc()
 ```
 
 ```{r , out.width="30%",include=FALSE}
-# Sample intracorrelation
-control <- c("#E0E0E0","#BDBDBD","#757575")
-persister_color <- c("#DCEDC8","#9CCC65","#4CAF50","#009688")
-treated_UNC_color <- c("#2196F3", "#4DD0E1" )
-treated_GSKJ4_color <- c("#C2185B", "#EC407A" )
-res_color <- c("#FFEB3B","#FFC107","#FF9800","#FF5722")
-color_PDX <- c(control[c(1,2)],persister_color[c(1,3)],res_color[c(2)],"#ffcbcb")
-
-corres <- data.frame(PDX=c("HBCx95_v3_UNT","HBCx95_m9_50_REC","HBCx95_persister_2souris","HBCx95_persister_6souris","HBCx95_m30_CAPAR","HBCx95_m6_CAPAS"),color=color_PDX)
-
 cor_mat = cor(t(pca_object))
 intra_corr=data.frame()
-for(i in unique(annot_sel2$sample_id)){
-    cells = annot_sel2$cell_id[which(annot_sel2$sample_id==i)]
+for(i in unique(annot_int$sample_id)){
+    cells = annot_int$cell_id[which(annot_int$sample_id==i)]
     tmp = cor_mat[cells,cells]
     tab = data.frame("sample_id" = rep(i,ncol(tmp)), "intra_corr" = colMeans(tmp))
     intra_corr=rbind(intra_corr,tab)
 }
 
-intra_corr$sample_id = factor(intra_corr$sample_id, levels =c("HBCx95_v3_UNT","HBCx95_m9_50_REC","HBCx95_persister_6souris","HBCx95_persister_2souris","HBCx95_m6_CAPAS","HBCx95_m30_CAPAR"))
+intra_corr$sample_id = factor(intra_corr$sample_id, levels =samples_PDX)
 
 png(file.path(resSUBdir_boxplots,paste0("Sample_intracorrelation_violin.png")),height=1000,width=1000,res=300)
 ggplot(intra_corr,aes(x=sample_id,y=intra_corr, fill=sample_id)) + 
@@ -358,7 +304,7 @@ dev.off()
 
 ```{r , out.width="30%",include=FALSE}
 #Association of cell cycle to samples
-CellCycle <- as.data.frame.matrix(table(annot_sel2$sample_id,annot_sel2$cell_cycle))
+CellCycle <- as.data.frame.matrix(table(annot_int$sample_id,annot_int$cell_cycle))
 CellCycle$pvalue <- 0
 for(i in c(1:(dim(CellCycle)[1]))){
  test <- chisq.test(CellCycle[c(i,6),c(1:3)]) 
@@ -392,21 +338,17 @@ resdir_heatmaps <-  file.path(resdir_supervised,"Heatmaps");if(!file.exists(resd
 load(file.path(resSUBdir,"RData","RawCounts_features.RData"))
 load(file.path(resSUBdir,"RData","all_sub_500.RData"))
 
-RawCounts_sub = RawCounts[,annot_sel2_sub$cell_id]
+RawCounts_sub = RawCounts[,annot_int_sub$cell_id]
 gc()
-metadata = annot_sel2_sub
+metadata = annot_int_sub
 
 #Get the gene list of Persister cells (6souris) overexpressed
 mygps <- list(
-# 'persister_vs_UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_persister_6souris","HBCx95_persister_2souris") ),"cell_id"],
-# 'persister_vs_all'=metadata[which(metadata$sample_id %in% c("HBCx95_persister_6souris","HBCx95_persister_2souris") ),"cell_id"],
 'persister_6_vs_UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_persister_6souris") ),"cell_id"]
 )
 sapply(mygps,length)
 
 myrefs <- list(
-    # 'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_v3_UNT") ),"cell_id"],
-    # 'all'=metadata[which(!metadata$sample_id %in% c("HBCx95_persister_6souris","HBCx95_persister_2souris")  ),"cell_id"],
     'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_v3_UNT") ),"cell_id"]
     
 )
@@ -542,7 +484,11 @@ for(i in 1:length(groups)) 	{
 ### Get gene lists and differential genes
 
 ```{r, echo=FALSE}
+load(file=file.path(RDatadir,"LogCounts.RData"))
 load(file=file.path(RDatadir,"annot_anocol_final.RData"))
+load(file=file.path(RDataSupdir,"Supervised_res_object_edgeR.Rdata"))
+annot_int_2 = annot_int
+
 diff_genes <-  c("NNMT","TAGLN","INHBA","KRT6A","KRT6B","KRT16","KRT14","KLK10",
                  "KLK5","KLK7")
 diff_genes_figures <-  c("KRT17", "INHBB", "KRT5","KRT8","BMP6","CDKN2B","TGFBR2",
@@ -558,48 +504,49 @@ gene_lists <- c("KEGG_TGF_BETA_SIGNALING_PATHWAY",
            "HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION",
            "HALLMARK_APOPTOSIS","HALLMARK_TNFA","LEI_MYB_TARGETS")
 
+annotCol = unique(c(annotCol,diff_genes,diff_genes_figures))
 for(log2FC_threshold in log2FC_thresholds){
     overgenes = my.res$Symbol[which(my.res$log2FC.persister_6_vs_UNT > log2FC_threshold & 
               my.res$qval.persister_6_vs_UNT < Signif_threshold)]
     for(i in gene_lists) {
         genes <- intersect(overgenes, unlist(str_split(MSIG.gs[which(MSIG.gs$Gene.Set==i),3],",")))
-        annot_sel2$test <- apply(LogCounts[which(rownames(LogCounts) %in% genes),],2,mean)
-        colnames(annot_sel2)[dim(annot_sel2)[2]] <- paste0(i,"_logFC",round(log2FC_threshold,2))
+        annot_int_2$test <- apply(LogCounts[which(rownames(LogCounts) %in% genes),],2,mean)
+        colnames(annot_int_2)[dim(annot_int_2)[2]] <- paste0(i,"_logFC",round(log2FC_threshold,2))
+        annotCol = unique(c(annotCol,colnames(annot_int_2)[dim(annot_int_2)[2]]))
     }
 }
 
 for(i in annotCol){
-    if(i %in% rownames(LogCounts)) annot_sel2[,i] <- LogCounts[which(rownames(LogCounts)==i),]
+    if(i %in% rownames(LogCounts)) annot_int_2[,i] <- LogCounts[which(rownames(LogCounts)==i),]
 }
 gc()
 
-if(file.exists(file.path(here(), "output","scRNAseq","common_overexpressed_genes_pers_vs_unt.RData"))){
-    load(file.path(here(), "output","scRNAseq","common_overexpressed_genes_pers_vs_unt.RData"))
+if(file.exists(file.path(here(), "output","scRNAseq","MM468_PDX","common_over_genes_pers_vs_unt_log2FC1.58.RData"))){
+    load(file.path(here(), "output","scRNAseq","MM468_PDX","common_over_genes_pers_vs_unt_log2FC1.58.RData"))
     for(i in common_overexpressed_genes){
-        annot_sel2[,i] = LogCounts[i,annot_sel2$cell_id]
+        annot_int_2[,i] <- LogCounts[which(rownames(LogCounts)==i),]
     }
     annotCol = unique(c(annotCol, common_overexpressed_genes))
 }
-
 anocol2 <- geco.unsupervised::geco.annotToCol4(
-    annotS=annot_sel2,annotT=annot_sel2,
+    annotS=annot_int_2,annotT=annot_int_2,
     plotLegend=T, plotLegendFile = file.path(resSUBdir,"Annotation_legends.pdf"),
     scale_q = "inferno")
-
+for(i in intersect(colnames(anocol),colnames(anocol2))) anocol2[,i] = anocol[,i]
 
 png(file.path(resdir_boxplots,"Boxplot_KEGG_TGFB_FC2.png"),width=1500,height=1500,res=300)
-boxplot(annot_sel2$KEGG_TGF_BETA_SIGNALING_PATHWAY_logFC2~annot_sel2$sample_id,las=2)
+boxplot(annot_int_2$KEGG_TGF_BETA_SIGNALING_PATHWAY_logFC2~annot_int_2$sample_id,las=2)
 dev.off()
 
 png(file.path(resdir_boxplots,"Boxplot_KEGG_TGFB_FC1.png"),width=1500,height=1500,res=300)
-boxplot(annot_sel2$KEGG_TGF_BETA_SIGNALING_PATHWAY_logFC1~annot_sel2$sample_id,las=2)
+boxplot(annot_int_2$KEGG_TGF_BETA_SIGNALING_PATHWAY_logFC1~annot_int_2$sample_id,las=2)
 dev.off()
 
 png(file.path(resdir_boxplots,"Boxplot_INHBA.png"),width=1500,height=1500,res=300)
-boxplot(annot_sel2$INHBA~annot_sel2$sample_id,las=2)
+boxplot(annot_int_2$INHBA~annot_int_2$sample_id,las=2)
 dev.off()
 
-save(anocol2,annot_sel2,file=file.path(RDataSupdir,"annot_anocol_final.RData")) 
+save(anocol2,annot_int_2,file=file.path(RDataSupdir,"annot_anocol_final.RData")) 
 ```
 
 ### Generate figures: UMAP with correlation heatmap
@@ -607,20 +554,22 @@ save(anocol2,annot_sel2,file=file.path(RDataSupdir,"annot_anocol_final.RData"))
 ```{r, out.width="30%", echo=FALSE}
 load(file.path(RDatadir,"umap.RData"))
 load(file.path(RDataSupdir,"annot_anocol_final.RData"))
+load(file.path(RDatadir,"annot_anocol_final.RData"))
 
-for(j in 1:ncol(anocol2))
+for(i in setdiff(colnames(anocol2),colnames(anocol)))
     {
+   j = which(colnames(anocol2)==i)
     png(file.path(resdir_UMAPs,paste0("UMAP_",colnames(anocol2)[j],".png")), height=1350,width=1200,res=300)
-  if(class(annot_sel2[1,colnames(anocol2)[j]])=="numeric"){
+  if(class(annot_int_2[1,colnames(anocol2)[j]])=="numeric"){
     plot((umap_res), col=alpha(anocol2[,j],0.3),pch=20,cex=0.6,
-         main=paste0(colnames(anocol2)[j]," min=",round(min(annot_sel2[,colnames(anocol2)[j]]),digits=3)," max=",round(max(annot_sel2[,colnames(anocol2)[j]]),digits=3)),
+         main=paste0(colnames(anocol2)[j]," min=",round(min(annot_int_2[,colnames(anocol2)[j]]),digits=3)," max=",round(max(annot_int_2[,colnames(anocol2)[j]]),digits=3)),
          xlab="component 1",ylab="component 2")} else {
              plot((umap_res), col=alpha(anocol2[,j],0.3),pch=20,cex=0.6,
          main=paste0(colnames(anocol2)[j]),
          xlab="component 1",ylab="component 2")
              if(colnames(anocol2)[j]=="sample_id"){
                  #Plot persister with add plot since there is too low cell number
-                 pers = which(annot_sel2$sample_id=="HBCx95_persister_6souris")
+                 pers = which(annot_int_2$sample_id=="HBCx95_persister_6souris")
                  points(umap_res[pers,], col=alpha(anocol2[pers,j],0.5),pch=20,cex=0.6)
                  
              }
@@ -681,7 +630,6 @@ for(log2FC_threshold in log2FC_thresholds){
 
     load(file.path(RDataSupdir,paste0("Enrichment_test_persister_6_vs_UNT_vs_UNT_MSigDB_logFC",round(log2FC_threshold,2),".RData")))
     
-    gene_metadata = feature
     how_many_top <- 20
     significPathway <- Overexpressed[Overexpressed$Class %in% c("c2_curated","c6_oncogenic","hallmark"),]
     
@@ -690,7 +638,7 @@ for(log2FC_threshold in log2FC_thresholds){
     
     
     #Calculate average expression for every cells on genes of each top pathways
-    pathway_mat <- matrix(0,nrow=how_many_top,ncol=length(annot_sel2$sample_id))		
+    pathway_mat <- matrix(0,nrow=how_many_top,ncol=length(annot_int_2$sample_id))		
     pathway_names <- c()		
     for(i in 1:how_many_top){
         gene_list <- unlist(strsplit(as.character(significPathway$Deregulated_genes[i]),";"))
@@ -702,7 +650,7 @@ for(log2FC_threshold in log2FC_thresholds){
     row.names(pathway_mat) <- pathway_names
     tmat <- t(pathway_mat)
     
-    selected_cells = annot_sel2$cell_id[which(annot_sel2$louvain_partition %in% c("C1","C5"))]
+    selected_cells = annot_int_2$cell_id[which(annot_int_2$louvain_partition %in% c("C1","C5"))]
     rownames(tmat) = colnames(LogCounts)
     tmat = tmat[selected_cells,]
     distHC <- c("distPearson","distCosine","euclidean","maximum","manhattan","canberra","binary","minkowski")[3]

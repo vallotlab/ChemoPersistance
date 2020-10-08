@@ -221,7 +221,6 @@ diff_genes_figures <-  c("KRT17", "INHBB", "KRT5","KRT8","BMP6","CDKN2B","TGFBR2
                          "FOSL1","NNMT","KRT14","KLK10","KLK5","TAGLN","NNMT",
                          "ELN","TGFBR3","MIF")
 
-
 pcaText <- FALSE
 annotText <- "sample_id"
 
@@ -248,8 +247,8 @@ for(i in annotCol){
 }
 gc()
 
-if(file.exists(file.path(here(), "output","scRNAseq","common_over_genes_pers_vs_unt.RData"))){
-    load(file.path(here(), "output","scRNAseq","common_over_genes_pers_vs_unt.RData"))
+if(file.exists(file.path(here(), "output","scRNAseq","MM468_PDX","common_over_genes_pers_vs_unt_log2FC1.58.RData"))){
+    load(file.path(here(), "output","scRNAseq","MM468_PDX","common_over_genes_pers_vs_unt_log2FC1.58.RData"))
     for(i in common_overexpressed_genes){
         annot_int[,i] <- persister_LogCounts[which(rownames(persister_LogCounts)==i),]
     }
@@ -273,7 +272,7 @@ dev.off()
 
 save(anocol2,annot_int,file=file.path(RDataSupdir,"annot_anocol_final.RData")) 
 
-for(i in annotCol)
+for(i in setdiff(colnames(anocol2),colnames(anocol)))
 {
     j = which(colnames(anocol2) == i)
     png(file.path(resdir_UMAPs,paste0("UMAP_",colnames(anocol2)[j],".png")), height=1350,width=1200,res=300)
