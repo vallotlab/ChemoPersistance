@@ -1,16 +1,6 @@
 ######## GINI coefficients MM468 - scChIP ############
 
 library(here)
-library(Matrix)
-library(readxl)
-library(ggplot2)
-library(rtracklayer)
-library(GenomicRanges)
-library(geco.visu)
-library(geco.supervised)
-library(geco.unsupervised)
-library(ape)
-library(viridis)
 source(file.path(here(),"Scripts","functions.R"))
 source(file.path(here(),"Scripts","global_var.R"))
 
@@ -54,26 +44,33 @@ house_keeping_genes_row <- c(11477, 13853, 19080, 19230, 19841, 20044, 23094,
 annot10k_housekeeping <- annot10k[house_keeping_genes_row,]
 house_keeping_genes_region = annot10k_housekeeping$ID
 
+mark = list("K4" = c() , "K27" = c())
+i=0
+for(archive in c("MM468_K4_transcripts_10k_1000.zip","MM468_K27_transcripts_10k_1000.zip")){
+  i = i +1
+  file_names = basename(unzip(file.path(
+    maindir,"input","scChIPseq","MM468","Count_Matrices",archive),
+    list = T)$Name)
+  list_files = vector("list", length(file_names[grep(".tsv",file_names)]))
+  names(list_files) = gsub(".tsv","",file_names[grep(".tsv",file_names)])
+  path_matrices = file.path(  maindir,"input","scChIPseq",
+                              "MM468","Count_Matrices",
+                              archive)
+  
+  #10k counts
+  for(file in names(list_files)) {
+    list_files[[file]] = scater::readSparseCounts(
+      unzip(zipfile = path_matrices,files = paste0(file,".tsv")))
+    colnames(list_files[[file]]) = paste0(file,"_",colnames(list_files[[file]]))
+  }
+  mark[[i]] = list_files
+}
+
+## Gini
 bivalent_genes <- c("BMP6","LAMB1", "VIM", "FOSL1", "ABCC4",
                     "COL4A2", "KRT14", "TGFB1", "KLK10" )
 bivalent_genes_row <- c(16677, 20736, 25943, 29195, 34181, 34369, 41923, 46164, 46727)
 annot10k_bivalent <- annot10k[bivalent_genes_row,]
-
-file_names = unzip(file.path(
-  maindir,"input","scChIPseq","MM468","Count_Matrices","MM468_K4_transcripts_10k_1000.zip"),
-  list = T)$Name
-list_files = vector("list", length(file_names))
-names(list_files) = gsub(".tsv","",file_names)
-path_matrices = file.path(  maindir,"input","scChIPseq",
-                            "MM468","Count_Matrices",
-                            "MM468_K4_transcripts_10k_1000.zip")
-
-#10k counts
-for(file in names(list_files)) {
-  list_files[[file]] = scater::readSparseCounts(
-    unzip(zipfile = path_matrices,files = paste0(file,".tsv")))
-  colnames(list_files[[file]]) = paste0(file,"_",colnames(list_files[[file]]))
-}
 
 #Determine the cells with the top cells with the most efficient IP (the most presence of H3K4me3 fragments for housekeeping genes)
 mat <- list_files$MM468_DMSO6_D0_K4
@@ -174,8 +171,13 @@ violin_plot_cooccurence(mat_init,mat_pers,
 dev.off()
 
 #Heatmap on top cells of DMSOi and 5FU6
+mat_pers = list_files$MM468_5FU6_D60_K4
+mat_init = list_files$MM468_DMSO6_D0_K4
+
+mat_init_K27 = mark$K27$MM468_Ipop_DMSO6_K27me3
+mat_pers_K27 = mark$K27$MM468_5FU6_D33_K27
+
 tmat = Matrix::cBind(mat_pers,mat_init)
-# tmat = tmat[-which(rowSums(tmat)==0),]
 tmat = tmat[match(c(overexpressed_MM468_persister_regions,house_keeping_genes_region),rownames(tmat)),
             match(c(top_cells_pers,top_cells_init),colnames(tmat))]
 bin_mat = tmat
@@ -183,13 +185,7 @@ bin_mat[bin_mat>0] = 1
 
 methHC <- c("ward","ward.D","ward.D2","single","complete","average")[3]
 hc <- hclust(as.dist(1-cor(as.matrix(bin_mat))),method=methHC)
-# chRangeHM = TRUE
 mat.so <- as.matrix(bin_mat)
-# if(chRangeHM){
-#   for(i in 1:nrow(mat.so)){
-#     mat.so[i,] <- geco.changeRange(mat.so[i,],newmin=0,newmax=1)
-#   }
-# }
 
 #Create cell annotation data.frame
 annot_cell = data.frame(cell_id = c(top_cells_pers,top_cells_init),
@@ -200,11 +196,12 @@ anocol = geco.annotToCol4(annot_cell)
 
 hc_gene = hclust(dist(as.matrix(bin_mat)),method=methHC)
 hc_gene$labels = rep("",length(hc_gene$labels))
+
 #Create gene/region annotation data.frame
 annot_gene = data.frame(region = c(overexpressed_MM468_persister_regions,house_keeping_genes_region),
                         genes = c(as.character(regions$gene),as.character(annot10k_housekeeping$gene)),
                         type = c(rep("Persister",length(overexpressed_MM468_persister_regions)),
-                                   rep("Housekeeping",length(house_keeping_genes_region))),
+                                 rep("Housekeeping",length(house_keeping_genes_region))),
                         total_cells = rowSums(bin_mat))
 rownames(annot_gene) = annot_gene$region
 anocol_gene = geco.annotToCol4(annot_gene)
