@@ -33,11 +33,9 @@ annotationDatabases <- c("MSigDB") # "KEGG" or "GO" or "KEGG_GO" or "MSigDB"
 
 table(metadata[,c("sample_id","louvain_partition")])
 mygps <- list(
-'C2_pers'=metadata[which(metadata$louvain_partition %in% c("C2") ),"cell_id"],
-'MM468_5FU6_day214'=metadata[which(metadata$sample_id %in% c("MM468_5FU6_day214") ),"cell_id"]
+'C2_pers'=metadata[which(metadata$louvain_partition %in% c("C2") ),"cell_id"]
 )
 myrefs <- list(
-'DMSO'=metadata[which(metadata$sample_id %in% c("MM468_initial") ),"cell_id"],
 'DMSO'=metadata[which(metadata$sample_id %in% c("MM468_initial") ),"cell_id"]
 ) # Sets reference (can be 1 or more samples)
 
@@ -115,9 +113,9 @@ if ("edgeR" %in% algoType) {
     
     for(log2FC_threshold in log2FC_thresholds){
         under_res = my.res %>% dplyr::filter(log2FC.C2_pers < -log2FC_threshold & qval.C2_pers < Signif_threshold) %>% 
-            dplyr::arrange(qval.C2_pers) %>% dplyr::select(Symbol,log2FC.C2_pers,qval.C2_pers)
+            dplyr::arrange(qval.C2_pers) %>% select(Symbol,log2FC.C2_pers,qval.C2_pers)
         over_res = my.res %>% dplyr::filter(log2FC.C2_pers > log2FC_threshold & qval.C2_pers < Signif_threshold) %>% 
-            dplyr::arrange(qval.C2_pers) %>% dplyr::select(Symbol,log2FC.C2_pers,qval.C2_pers)
+            dplyr::arrange(qval.C2_pers) %>% select(Symbol,log2FC.C2_pers,qval.C2_pers)
         
         WriteXLS(c("over_res","under_res","my.res"),
                  ExcelFileName = file.path(

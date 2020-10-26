@@ -1,18 +1,17 @@
+library(here)
 
 maindir= here()
+source(file.path(maindir, "Scripts", "global_var.R"))
+source(file.path(maindir, "Scripts", "functions.R"))
+
 inputDir_sc <- file.path(maindir,"input","scChIPseq","MM468","BigWigs")
 inputDir_bulk <- file.path(maindir,"input","bulk_ChIPseq","BigWigs","MM468")
 resDir <- file.path(maindir,"output","bulk_ChIPseq","Snapshots")
 load(file.path(maindir,"annotation","Gencode_hg38_v25.RData"))
 
-library(Sushi)
-library(here)
-library(rtracklayer)
-library(scales)
-library(ChromSCape)
-library(tidyverse)
-library(GenomicRanges)
-options(stringsAsFactors = F)
+input_ratios <- file.path(maindir,"output","bulk_ChIPseq","MM468","ChromatinIndexing","ratio_ip_input_K4.csv")
+normalizing_ratios = read.csv(input_ratios)
+rownames(normalizing_ratios) = normalizing_ratios$Sample
 
 print(list.files(inputDir_sc))
 print(list.files(inputDir_bulk))
@@ -33,6 +32,9 @@ cum_DMSO6_day0_K4 <- rtracklayer::import(file.path(inputDir_sc, "MM468_DMSO6_day
 ## 5FU & DMSO Bulk K4  
 cum_5FU6_day33_bulk_K4 <- rtracklayer::import(file.path(inputDir_bulk, "MM468_5FU_D33_K4_E02.bw"))
 cum_DMSO6_day33_bulk_K4 <- rtracklayer::import(file.path(inputDir_bulk, "MM468_DMSO_D33_K4_C02.bw"))
+
+# correct by IP / Input ratio
+
 
 gc()
 

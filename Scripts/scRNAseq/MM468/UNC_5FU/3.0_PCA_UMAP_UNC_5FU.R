@@ -1,15 +1,15 @@
 
 library(here)
-
 # Directories -------------------------------------------------------------
 maindir= here()
-resdir <- file.path(maindir,"output","scRNAseq","MM468","UNC")
+resdir <- file.path(maindir,"output","scRNAseq","MM468","UNC_5FU")
 QCdir <- file.path(maindir,"output","scRNAseq","QC")
 
 resdir <- file.path(resdir, "Unsupervised") ; if(!file.exists(resdir)){dir.create(resdir)}
 resdir_UMAP <- file.path(resdir,"UMAP") ; if(!file.exists(resdir_UMAP)){dir.create(resdir_UMAP)}
 resdir_boxplots <- file.path(resdir,"boxplots") ; if(!file.exists(resdir_boxplots)){dir.create(resdir_boxplots)}
 resdir_heatmaps = file.path(resdir,"Heatmaps"); if(!dir.exists(resdir_heatmaps)) dir.create(resdir_heatmaps)
+resdir_sub = file.path(resdir,"sub500"); if(!dir.exists(resdir_sub)) dir.create(resdir_sub)
 RDatadir <- file.path(resdir,"RData") ; if(!file.exists(RDatadir)){dir.create(RDatadir)}
 
 source(file.path(maindir,"Scripts","global_var.R"))
@@ -18,18 +18,17 @@ source(file.path(maindir,"Scripts","global_var.R"))
 # PCA, UMAP and louvain clustering with Monocle 3  on all cells for the paper------------------
 ################################################################################################
 load(file.path(maindir,"output","scRNAseq","MM468","Persister","Unsupervised","RData","MM468.RData"))
-load(file.path(RDatadir,"UNC_gene_cell_annot.RData"))
+# load(file.path(RDatadir,"persister_gene_cell_annot.RData"))
 annot_int <- annot
 
-# Select initial population, 4 'persister' states (early), 3 'resistant' states (late) and UNC sample
-sample_UNC_study = c(
-  "MM468_initial","MM468_5FU6_day33", "MM468_UNC_day33","MM468_5FU3_day50","MM468_5FU5_day67",
-  "MM468_5FU3_day77", "MM468_5FU5_day171","MM468_5FU3_day202",
-  "MM468_5FU6_day214"
-  )
 table(annot_int$sample_id)
+# Select initial population, 4 'persister' states (early) and 3 'resistant' states (late)
+sample_UNC_5FU_study = c(
+  "MM468_initial","MM468_5FU6_day33","MM468_5FU3_day50","MM468_5FU5_day67",
+  "MM468_5FU3_day77", "MM468_5FU6_UNC_day33"
+  )
 
-annot_int <- annot_int[annot_int$sample_id %in% sample_UNC_study & annot_int$doublet_score<10000,]
+annot_int <- annot_int[annot_int$sample_id %in% sample_UNC_5FU_study & annot_int$doublet_score<10000,]
 annot_int$sample_id <- as.character(annot_int$sample_id)
 set.seed(47)
 annot_subset <- annot_int %>% group_by(sample_id) %>% sample_n(1000)
@@ -50,7 +49,7 @@ cds <-  cluster_cells(cds)
 
 umap_res <- cds@int_colData$reducedDims[[2]] # with R3.6.2 and higher for SummarizedExperiment, otherwise cds@reducedDims[[2]]
 pca_object <- cds@int_colData$reducedDims[[1]]
-  
+
 annot_int$louvain_partition <- cds@clusters[[1]]$partitions
 annot_int$louvain_partition <- paste0("C",annot_int$louvain_partition)
 
@@ -80,7 +79,6 @@ gc()
 
 load(file.path(maindir,"output","scRNAseq","MM468_PDX","common_over_genes_pers_vs_unt_log2FC1.58.RData"))
 load(file.path(RDatadir,"UNC_LogCounts.RData"))
-load(file.path(RDatadir,"UNC_gene_cell_annot.RData"))
 load(file.path(RDatadir,"umap_UNC.RData"))
 load(file.path(RDatadir,"pca_UNC.RData"))
 
@@ -104,21 +102,21 @@ res_color <- c("#FF9800","#FFC107","#FFEB3B","#FF5722")
 treated_UNC_color <- c("#2196F3", "#4DD0E1" )
 treated_GSKJ4_color <- c("#C2185B", "#EC407A" )
 
-color_MM468 <- c(control[2],pers_color[1],treated_UNC_color[2],pers_color[2:4],res_color[c(1:3)])
+color_MM468 <- c(control[2],pers_color[1:4],treated_UNC_color[1])
 
 corres_sample <- data.frame(
-  Sample=sample_UNC_study,
+  Sample=sample_UNC_5FU_study,
   color=color_MM468)
 
 anocol[,"sample_id"] <- as.character(corres_sample$color[match(annot_int$sample_id,corres_sample$Sample)])
 
 png(file.path(resdir,"Legend_sample_scRNAseq.png"), height=2000,width=1500,res=300)
-barplot(rep(1,9),col=corres_sample$color, cex.names  =0.8,horiz=F,names.arg=corres_sample$Sample,las=2)
+barplot(rep(1,6),col=corres_sample$color, cex.names  =0.8,horiz=F,names.arg=corres_sample$Sample,las=2)
 dev.off()
 
 png(file.path(resdir,"Legend_cluster_scRNAseq.png"), height=2000,width=1500,res=300)
-barplot(rep(1,8),col=unique(anocol[,"louvain_partition"]), cex.names  =0.8,horiz=F,
-        names.arg=c("C1","C2","C3","C4","C5","C6","C7","C8"),las=2)
+barplot(rep(1,4),col=unique(anocol[,"louvain_partition"]), cex.names  =0.8,horiz=F,
+        names.arg=c("C1","C2","C3","C4"),las=2)
 dev.off()
 
 png(file.path(resdir_boxplots,"Boxplot_rRNA.png"),width=1500,height=1500,res=300)
@@ -137,11 +135,11 @@ for(j in 1:ncol(anocol))
 {
   png(file.path(resdir_UMAP,paste0("UMAP_",colnames(anocol)[j],".png")), height=1350,width=1200,res=300) 
   if(class(annot_int[1,colnames(anocol)[j]])=="numeric"){
-  plot((umap_res[annot_int$cell_id,]), col=alpha(anocol[,j],0.2),pch=20,
-       cex=0.4,main=paste0(colnames(anocol)[j],
-                           " min=",round(min(annot_int[,colnames(anocol)[j]]),digits=3),
-                           " max=",round(max(annot_int[,colnames(anocol)[j]]),digits=3)),
-       xlab="component 1",ylab="component 2")
+    plot((umap_res[annot_int$cell_id,]), col=alpha(anocol[,j],0.2),pch=20,
+         cex=0.4,main=paste0(colnames(anocol)[j],
+                             " min=",round(min(annot_int[,colnames(anocol)[j]]),digits=3),
+                             " max=",round(max(annot_int[,colnames(anocol)[j]]),digits=3)),
+         xlab="component 1",ylab="component 2")
   } else{
     plot((umap_res[annot_int$cell_id,]), col=alpha(anocol[,j],0.2),pch=20,
          cex=0.4,main=paste0(colnames(anocol)[j]),
@@ -178,7 +176,7 @@ if(length(indice) >0 ){
   
   #count number of barcodes detected per expression group: C10, C2, C3, C4, C6, C8
   stats_detection <- annot_int %>% mutate(
-    sample_id=factor(sample_id,levels=c(sample_UNC_study))) %>%
+    sample_id=factor(sample_id,levels=c(sample_UNC_5FU_study))) %>%
     group_by(sample_id) %>% 
     summarise(
       cells=length(cell_id),barcode=length(which(!is.na(cons_BC_lenti))),
@@ -186,7 +184,7 @@ if(length(indice) >0 ){
     )
   
   stats_barcode <- annot_int[!is.na(annot_int$cons_BC_lenti),] %>%
-    mutate(sample_id=factor(sample_id,levels=sample_UNC_study)) %>%
+    mutate(sample_id=factor(sample_id,levels=sample_UNC_5FU_study)) %>%
     group_by(sample_id,louvain_partition) %>%
     summarise(diff_barcode=length(unique(cons_BC_lenti)),
               barcode=length(cons_BC_lenti),
@@ -240,8 +238,8 @@ geco.hclustAnnotHeatmapPlot(x=cor(mat.so.cor),
 dev.off()
 
 #Plot repartition of Expression groups with time
-corres_day <- data.frame(Sample=sample_UNC_study,
-                          day=gsub(".*day","",sample_UNC_study))
+corres_day <- data.frame(Sample=sample_UNC_5FU_study,
+                         day=gsub(".*day","",sample_UNC_5FU_study))
 corres_day[which(corres_day$Sample=="MM468_initial"),"day"] = 0
 corres_day$day = as.numeric(corres_day$day)
 annot_int$day <- as.integer(corres_day$day[match(annot_int$sample_id,corres_sample$Sample)])
@@ -249,15 +247,15 @@ annot_int$day <- as.integer(corres_day$day[match(annot_int$sample_id,corres_samp
 annot_int$col <- annot_int[,"louvain_partition"]
 table(annot_int$louvain_partition,annot_int$col)
 test <- annot_int %>% mutate(
-  louvain_partition=factor(louvain_partition, levels = paste0("C",1:8))) %>%
+  louvain_partition=factor(louvain_partition, levels = paste0("C",1:4))) %>%
   mutate(sample_id=factor(
-    sample_id,levels=sample_UNC_study)) %>%
+    sample_id,levels=sample_UNC_5FU_study)) %>%
   group_by(sample_id,louvain_partition) %>% summarise(freq=n()) 
 # test = test[-which(is.na(test$louvain_partition)),]
 
 png(file.path(resdir_boxplots,"Louvain_partition_repartition.png"),width=1500,height=1500,res=300)
 ggplot(test) + geom_col(aes(y=freq,x=sample_id,fill=louvain_partition)) + 
-  scale_fill_manual(values=unique(anocol[,"louvain_partition"])[c(5,2,7,4,8,6,1,3)] ) + 
+  scale_fill_manual(values=unique(anocol[,"louvain_partition"])) + 
   theme_classic() + theme(axis.text.x = element_text(angle = 90)) 
 dev.off()
 
@@ -305,40 +303,4 @@ geco.hclustAnnotHeatmapPlot(x=(mat.so[rowClust$order,]),
 )
 dev.off()
 
-#reorder clustering
-nclust <- 8
-annot_int$clustCol_reorder <- paste("C",match(cutree(hc,nclust),unique(cutree(hc,nclust)[hc$order])),sep="")
-
-test <- c(which(annot_int$clustCol_reorder %in% c("C4")), which(annot_int$clustCol_reorder %in% "C6"),
-          which(annot_int$clustCol_reorder %in% "C5"),which(annot_int$clustCol_reorder %in% "C2"),
-          which(annot_int$clustCol_reorder %in% "C3"),which(annot_int$clustCol_reorder %in% "C1"),
-          which(annot_int$clustCol_reorder %in% "C7"),which(annot_int$clustCol_reorder %in% "C8"))
-
-hc_reorder <- dendextend::rotate(hc,test)
-
-mat.so <- as.matrix(mat[,hc_reorder$order])
-
-if(chRangeHM){
-  for(i in 1:nrow(mat.so)){
-    mat.so[i,] <- geco.changeRange(mat.so[i,],newmin=0,newmax=1)
-  }
-}
-rowClust <- hclust(as.dist(1 - cor(t(mat.so))), method = "ward.D")
-
-png(file.path(resdir_heatmaps,paste0("Reorder_Clustering_MostVarying_",NbGenes,"_",distHC,"_",methHC,".png")), height=4000,width=4000,res=300)
-
-geco.hclustAnnotHeatmapPlot(x=(mat.so[rowClust$order,]),
-                            hc=hc_reorder,
-                            hmColors=hmColors,
-                            anocol=as.matrix(anocol[hc_reorder$order,]),
-                            xpos=c(0.15,0.9,0.164,0.885),
-                            ypos=c(0.1,0.5,0.5,0.6,0.62,0.95),
-                            dendro.cex=0.01,
-                            xlab.cex=0.5,
-                            hmRowNames=TRUE,
-                            hmRowNames.cex=0.2
-)
-dev.off()
-
-  
   
