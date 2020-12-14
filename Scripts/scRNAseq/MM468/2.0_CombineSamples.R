@@ -1,15 +1,19 @@
+library(here)
+source(file.path(here(),"Scripts","functions.R"))
+source(file.path(here(),"Scripts","global_var.R"))
 library(ccRemover)
-options(stringsAsFactors = F)
+
 expName <- "MM468"
 
-# Directories -------------------------------------------------------------
+maindir = here()
 
-resdir <- "~/Desktop/scRNAseq_data_local/Results_MM468/"
-resSUBdir <- file.path(resdir, paste0("Unsupervised_persister")) ; if(!file.exists(resSUBdir)){dir.create(resSUBdir)}
+# Directories -------------------------------------------------------------
+outdir = file.path(maindir, "output","scRNAseq", "MM468");  if(!dir.exists(outdir)){dir.create(outdir)}
+resdir <- file.path(outdir, "Persister"); if(!dir.exists(resdir)){dir.create(resdir)}
+resSUBdir <- file.path(resdir, paste0("Unsupervised")) ; if(!file.exists(resSUBdir)){dir.create(resSUBdir)}
 RDatadir <- file.path(resSUBdir,"RData") ; if(!file.exists(RDatadir)){dir.create(RDatadir)}
 RDatadirSamples <- file.path(RDatadir,"RData_perSample") ; if(!file.exists(RDatadirSamples)){dir.create(RDatadirSamples)}
 
-setwd(RDatadirSamples)
 for(f in list.files(RDatadirSamples,full.names=TRUE)) load(f)
 
 colnames(metadata.MM468_DMSO5_day67)[1] <- "BC_10x"
@@ -24,8 +28,6 @@ metadata.MM468_DMSO5_day67$seq_rep2 <- NA
 
 
 # Combining samples -------------------------------------------------------
-
-
 
 all_annots <-grep("metadata",names(.GlobalEnv),value=TRUE)
 annot <- do.call("rbind",mget(all_annots))

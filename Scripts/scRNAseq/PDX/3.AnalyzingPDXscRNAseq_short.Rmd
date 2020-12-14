@@ -191,6 +191,12 @@ png(file.path(resSUBdir_boxplots,"Boxplot_rRNA.png"),width=1500,height=1500,res=
 boxplot(annot_int$rRNA~annot_int$sample_id,las=2)
 dev.off()
 
+test <- wilcox.test(annot_int$rRNA[which(annot_int$sample_id %in% c("HBCx95_persister_6souris"))],
+                    annot_int$rRNA[which(annot_int$sample_id == "HBCx95_v3_UNT")]) 
+median(annot_int$rRNA[which(annot_int$sample_id %in% c("HBCx95_persister_6souris"))])
+median(annot_int$rRNA[which(annot_int$sample_id %in% c("HBCx95_v3_UNT"))])
+
+
 save(anocol,annot_int,file=file.path(RDatadir,"annot_anocol_final.RData")) 
 ```
 
@@ -262,7 +268,7 @@ geco.hclustAnnotHeatmapPlot(x=cor(mat.so.cor),
 dev.off()
 
 
-ClusterMembership <- as.data.frame.matrix(table(annot_int$sample_id,annot_int$louvain_partition))
+ClusterMembership <- as.data.frame.matrix(table(annot_int$sample_id,annot_int$louvain_cluster))
 ClusterMembership$pvalue <- 0
 ClusterMembership$sample_id <- rownames(ClusterMembership)
 for(i in c(1:(dim(ClusterMembership)[1]))){
@@ -338,19 +344,24 @@ resdir_heatmaps <-  file.path(resdir_supervised,"Heatmaps");if(!file.exists(resd
 load(file.path(resSUBdir,"RData","RawCounts_features.RData"))
 load(file.path(resSUBdir,"RData","all_sub_500.RData"))
 
-RawCounts_sub = RawCounts[,annot_int_sub$cell_id]
+RawCounts_sub = RawCounts[,annot_sel2_sub$cell_id]
 gc()
-metadata = annot_int_sub
+metadata = annot_sel2_sub
 
 #Get the gene list of Persister cells (6souris) overexpressed
 mygps <- list(
-'persister_6_vs_UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_persister_6souris") ),"cell_id"]
+'persister_6_vs_UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_persister_6souris") ),"cell_id"],
+'C2_vs_UNT'=metadata[which(metadata$louvain_partition %in% c("C2") ),"cell_id"],
+'C3_vs_UNT'=metadata[which(metadata$louvain_partition %in% c("C3") ),"cell_id"],
+'C4_vs_UNT'=metadata[which(metadata$louvain_partition %in% c("C4") ),"cell_id"]
 )
 sapply(mygps,length)
 
 myrefs <- list(
+    'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_v3_UNT") ),"cell_id"],
+    'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_v3_UNT") ),"cell_id"],
+    'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_v3_UNT") ),"cell_id"],
     'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_v3_UNT") ),"cell_id"]
-    
 )
 sapply(myrefs,length)
 
@@ -371,22 +382,28 @@ log2FC_thresholds <- log2(c(2,3,4))
 Signif_threshold <- 0.01
 
 for(log2FC_threshold in log2FC_thresholds){
+  for(i in 1:length(myrefs)){
+    ref = names(myrefs)[i]
+    logFC_name = (paste0("log2FC.persister_6_vs_UNT",ref))
+    qval_name = (paste0("qval.persister_6_vs_",ref))
+    count_name = (paste0("logCPM.persister_6_vs_",ref))
     cat("Saving for FC =",2^log2FC_threshold,"\n")
     under_res = my.res %>% dplyr::filter(
-        log2FC.persister_6_vs_UNT < -log2FC_threshold &
-            qval.persister_6_vs_UNT < Signif_threshold) %>% 
-        dplyr::arrange(qval.persister_6_vs_UNT) %>%
-        select(Symbol,log2FC.persister_6_vs_UNT,qval.persister_6_vs_UNT)
+         .data[[logFC_name]] < -log2FC_threshold &
+            .data[[qval_name]] < Signif_threshold) %>% 
+        dplyr::arrange(.data[[qval_name]]) %>%
+        dplyr::select(Symbol,.data[[logFC_name]],.data[[qval_name]])
     
     over_res = my.res %>% dplyr::filter(
-        log2FC.persister_6_vs_UNT > log2FC_threshold &
-            qval.persister_6_vs_UNT < Signif_threshold) %>% 
-        dplyr::arrange(qval.persister_6_vs_UNT) %>%
-        dplyr::select(Symbol,log2FC.persister_6_vs_UNT,qval.persister_6_vs_UNT)
+         .data[[logFC_name]] > log2FC_threshold &
+            .data[[qval_name]] < Signif_threshold) %>% 
+        dplyr::arrange(.data[[qval_name]]) %>%
+        dplyr::select(Symbol,.data[[logFC_name]],.data[[qval_name]])
     
+    res_select = my.res[,c("Symbol",logFC_name,qval_name,count_name)]
     WriteXLS(c("over_res","under_res","my.res"),
              ExcelFileName = file.path(
-                 tabdir,paste0("Differential_analysis_Limma_logFC_",
+                 tabdir,paste0("Differential_analysis_Limma_logFC_Pers_vs_",ref,"_",
                                round(log2FC_threshold,2),".xlsx")),
                  SheetNames = c(
                      paste0("Over_",round(log2FC_threshold,2),"_",Signif_threshold,"_n",
@@ -410,6 +427,7 @@ for(log2FC_threshold in log2FC_thresholds){
     write.table(summaryTab, file.path(
         tabdir,paste0("Number_differentially_expressed_genes_per_group_logFC_",
                       round(log2FC_threshold,2),".csv")),row.names=F,quote=F,sep=";")
+  }
 }
 save(my.res, file=file.path(RDataSupdir,paste("Supervised_res_object_edgeR.Rdata",sep="")))
 print("summaryedgeRCompare Done")
@@ -494,7 +512,7 @@ diff_genes <-  c("NNMT","TAGLN","INHBA","KRT6A","KRT6B","KRT16","KRT14","KLK10",
 diff_genes_figures <-  c("KRT17", "INHBB", "KRT5","KRT8","BMP6","CDKN2B","TGFBR2",
                          "TGFBR3","TGFB2","INHBA","INHBB","SMAD2","TGFB1",
                          "FOSL1","NNMT","KRT14","KLK10","KLK5","TAGLN","NNMT",
-                         "ELN","TGFBR3","MIF")
+                         "ELN","TGFBR3","MIF","ABCC4","ABCC3")
 
 
 pcaText <- FALSE
@@ -563,7 +581,8 @@ for(i in setdiff(colnames(anocol2),colnames(anocol)))
   if(class(annot_int_2[1,colnames(anocol2)[j]])=="numeric"){
     plot((umap_res), col=alpha(anocol2[,j],0.3),pch=20,cex=0.6,
          main=paste0(colnames(anocol2)[j]," min=",round(min(annot_int_2[,colnames(anocol2)[j]]),digits=3)," max=",round(max(annot_int_2[,colnames(anocol2)[j]]),digits=3)),
-         xlab="component 1",ylab="component 2")} else {
+         xlab="component 1",ylab="component 2")
+    } else {
              plot((umap_res), col=alpha(anocol2[,j],0.3),pch=20,cex=0.6,
          main=paste0(colnames(anocol2)[j]),
          xlab="component 1",ylab="component 2")

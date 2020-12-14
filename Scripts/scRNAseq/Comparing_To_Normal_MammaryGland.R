@@ -1,86 +1,23 @@
+library(here)
+source(file.path(here(),"Scripts","functions.R"))
+source(file.path(here(),"Scripts","global_var.R"))
 
-##############################################################################################
-###############			LIBRARIES AND FUNCTIONS					##############################
-##############################################################################################
-options(stringsAsFactors=FALSE, width=180)
-organism <- "hg38"
-GencodeVersion <- ""
-chRangeHM=T
-distHC <- c("distPearson","distCosine","euclidean","maximum","manhattan","canberra","binary","minkowski")[1]
-methHC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
-
-##ConsClust
-repsCC <- 1000
-pItemCC <- 0.8
-pFeatureCC <- 1
-clusterAlgCC <- c("hc","pam","km","kmdist")[1]
-distCC <- c("pearson","distCosine","euclidean","manhattan")[1]
-innerLinkageCC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
-finalLinkageCC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
-
-## Heatmap
-chRangeHM <-TRUE # Should be set to TRUE for expression data, FALSE for methylation data
-hmColors <- colorRampPalette(c("royalblue","white","indianred1"))(256)
-corColors <- colorRampPalette(c("royalblue1","white","indianred1"))(256)
-
-library(geco.supervised);
-library(geco.utils)
-library(geco.visu)
-library(edgeR); library(ggplot2); library(rgl); library(RColorBrewer); library(genefilter); library(xtable); library(geco.RNAseq); library(WriteXLS); library(data.table); library(stringr); library(limma); library(edgeR);library(dplyr) ####################################################################
-library(scTools)
-library(Matrix)
-library(dplyr)
-library(corrplot)
-library(geco.utils)
-library(geco.visu)
-library(geco.unsupervised)
-library(scatterplot3d)
-library(scater)
-library(Rtsne)
-library(ccRemover)
-library(colorRamps)
-library(geco.supervised)
-library(viridis)
-library(colorRamps)
-library(geco.supervised);  library(edgeR); library(ggplot2); library(rgl); library(RColorBrewer); library(genefilter); library(xtable); library(geco.RNAseq); library(WriteXLS); library(data.table); library(stringr); library(limma); library(edgeR)
-
-library(scTools)
-library(monocle3)
-library(dplyr)
-library(WriteXLS)
-library(clValid)
-library(ape)
-library(ConsensusClusterPlus)
-devtools::load_all("/media/pprompsy/LaCie/InstitutCurie/Documents/GitLab/R_packages/GeCo.Rpackages/geco.visu/")
-
-MSigDBFile1 <- "/media/pprompsy/LaCie/InstitutCurie/Documents/GitLab/ChromSCape_devel/data/hg38.MSIG.gs.rda" 
-MSigDBFile2 <- "/media/pprompsy/LaCie/InstitutCurie/Documents/GitLab/ChromSCape_devel/data/hg38.MSIG.ls.rda"
-load(MSigDBFile1)
-load(MSigDBFile2)
-MSIG.ls = hg38.MSIG.ls
-MSIG.gs = hg38.MSIG.gs
-
-### PARAMETERS	
-####################################################################
-useClusterInfoFromUnsupp <- TRUE ## TRUE , FALSE
-
-####################################################################
-### DIRECTORIES and FILES 
-####################################################################
+maindir = here()
 
 ######VARIABLES
 options(width=180)
-maindir <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/"
-resdir <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/Normal_Mammary_Gland/"
-RDatadir_PDX <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/Results_PDX/Supervised/RData/"
-RDatadir_MM468 <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/Results_MM468/Supervised_persister/RData/"
-RDatadir_unsup <- "/media/pprompsy/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/Results_PDX/Unsupervised//RData/"
+resdir <- file.path(maindir,"output","scRNAseq","Normal_Mammary_Gland")
+PDX <- file.path(maindir,"output","scRNAseq","PDX","Supervised","RData")
+MM468 <- file.path(maindir,"output","scRNAseq","MM468","Persister","Supervised","RData")
+MM468_PDX <- file.path(maindir,"output","scRNAseq","MM468_PDX")
+RDatadir_unsup <- file.path(maindir,"output","scRNAseq","PDX","Unsupervised","RData")
 RDataSupdir <-  file.path(resdir,"RData");if(!file.exists(RDataSupdir)){dir.create(RDataSupdir)}
 
-setwd(maindir)
 
 ## Import annotation file
-load("common_over_genes_pers_vs_unt.RData")
+load(file.path(MM468_PDX,"Overexpressed_GeneLists_MM468_PDX_1.58.RData"))
+load(file.path(MM468_PDX,"common_over_genes_pers_vs_unt_log2FC1.58.RData"))
+common_overexpressed_genes
 
 PDX = new.env()
 MM468 = new.env()
@@ -123,7 +60,7 @@ load(file.path(RDatadir_MM468,"Supervised_res_object_edgeR.Rdata"),MM468)
 #                    "NNMT" = as.numeric(RawCounts_NormalMammaryGland[which(rownames(RawCounts_NormalMammaryGland) %in% "NNMT"),]))
 # 
 # save(RawCounts_NormalMammaryGland, gene_metadata,annot,file = file.path(resdir,"RawCounts_NormalMammaryGland_Ind4.RData"))
-load(file.path(resdir,"RData_individual_4","RawCounts_NormalMammaryGland_Ind4.RData"))
+load(file.path(resdir,"RData","RData_individual_4","RawCounts_NormalMammaryGland_Ind4.RData"))
 cds <- new_cell_data_set(RawCounts_NormalMammaryGland,
                          cell_metadata = annot,
                          gene_metadata  = gene_metadata)
@@ -145,10 +82,10 @@ pca_res <- reducedDims(cds)[[1]]
 # save(umap_res,file = file.path(resdir,"umap.RData"))
 # save(pca_res,file = file.path(resdir,"pca.RData"))
 
-load(file.path(resdir,"RData_individual_4","umap.RData"))
-load(file.path(resdir,"RData_individual_4","pca.RData"))
+load(file.path(resdir,"RData","RData_individual_4","umap.RData"))
+load(file.path(resdir,"RData","RData_individual_4","pca.RData"))
 
-annot$louvain_partition <- cds@clusters[[1]]$clusters
+annot$louvain_partition <- cds@clusters clusters[[1]]$clusters
 annot$louvain_partition <- paste0("C",annot$louvain_partition)
 
 NormCounts <- t(t(exprs(cds)) /  pData(cds)[, 'Size_Factor'])
@@ -157,18 +94,18 @@ rm(NormCounts)
 gc()
 
 # save(LogCounts,file=file.path(resdir,"LogCounts.RData"))
-load(file=file.path(resdir,"RData_individual_4","LogCounts.RData"))
+load(file=file.path(resdir,"RData","RData_individual_4","LogCounts.RData"))
 
 RawCounts = exprs(cds)
 
 # save(RawCounts,file=file.path(resdir,"RData_individual_4","RawCounts.RData"))
-load(file=file.path(resdir,"RData_individual_4","RawCounts.RData"))
+load(file=file.path(resdir,"RData","RData_individual_4","RawCounts.RData"))
 
-load("common_over_genes_pers_vs_unt.RData")
 for(gene in c("KRT18","KRT14","SLPI","ANKRD30A","CD74","LTF","AGR2",
-              "SAA2","KRT23","VIM","ESAM","KRT17","ACTA2",common_overexpressed_genes)){
+              "SAA2","KRT23","VIM","ESAM","KRT17","ACTA2","TGFBR2","INHBB",common_overexpressed_genes)){
   annot[,gene] <- LogCounts[gene,annot$cell_id]
 }
+
 annot$sample_id = as.factor(annot$sample_id)
 annot$cell_type = ""
 annot$cell_type[which(annot$louvain_partition == "C2")] = "Basal"
@@ -177,7 +114,7 @@ annot$cell_type[which(annot$louvain_partition == "C3")] = "Luminal 2"
 annot$cell_type[which(annot$louvain_partition == "C4")] = "Other"
 
 # save(annot,gene_metadata,file=file.path(resdir,"gene_cell_annot.RData"))
-load(file=file.path(resdir,"RData_individual_4","gene_cell_annot.RData"))
+load(file=file.path(resdir,"RData","RData_individual_4","gene_cell_annot.RData"))
 
 anocol <- geco.annotToCol4(annot[,-1],annotT=annot[,-1],plotLegend=F,
                            categCol=NULL, scale_q = "inferno")
@@ -185,9 +122,10 @@ anocol <- geco.annotToCol4(annot[,-1],annotT=annot[,-1],plotLegend=F,
 umap_res <- umap_res[annot$cell_id,]
 save(anocol,file= file.path(resdir,'anocol.RData'))
 load(file= file.path(resdir,"RData_individual_4",'anocol.RData'))
+
 for(j in 1:ncol(anocol))
 {
-  png(file.path(resdir,paste0("UMAP_",colnames(anocol)[j],".png")), height=1350,width=1200,res=300) 
+  png(file.path(resdir,"UMAPs",paste0("UMAP_",colnames(anocol)[j],".png")), height=1350,width=1200,res=300) 
   if(class(annot[1,colnames(anocol)[j]])=="numeric"){
     plot((umap_res[annot$cell_id,]), col=alpha(anocol[,j],0.2),pch=20,
          cex=0.4,main=paste0(colnames(anocol)[j],

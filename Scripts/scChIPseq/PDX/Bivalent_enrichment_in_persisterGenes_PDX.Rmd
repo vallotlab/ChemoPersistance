@@ -1,0 +1,261 @@
+---
+title: "Pseudo-bulk peaks K27 HBCx95 UNT m43"
+author: "Céline Vallot"
+date: "05/06/2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+# Create 10k transcript TSS K27 annotation 
+library(here)
+maindir = here()
+source(file.path(maindir,"Scripts","global_var.R"))
+```
+
+```{r, echo=FALSE}
+#Directories
+dataDir <- file.path(maindir,"input","bulk_ChIPseq","PDX")
+annotDir <- file.path(maindir,"annotation")
+resdir <- file.path(maindir,"output","scChIPseq","PDX","Bivalence")
+if(!dir.exists(resdir)) dir.create(resdir)
+
+```
+
+
+```{r, echo=FALSE}
+annot_10k = read.table(gzfile(file.path(maindir,"annotation",
+                                        "gencode.v34.annotation.transcriptTSS_10k.bed.gz")),
+                       sep="\t", header = F)
+colnames(annot_10k) = c("chr","start","end","transcripts","gene","strand")
+annot_10k = as(annot_10k,"GRanges")
+annot_10k$ID = paste0(seqnames(annot_10k),"_",start(annot_10k),"_", end(annot_10k))
+
+bivalent_peaks = read.table(file.path(dataDir, "HBCx95_K4_K27_intersect_plain.bed"),
+                       sep="\t", header = F)
+colnames(bivalent_peaks) = c("chr","start","end")
+bivalent_peaks = as(bivalent_peaks,"GRanges")
+bivalent_peaks$ID = paste0(seqnames(bivalent_peaks),"_",start(bivalent_peaks),"_", end(bivalent_peaks))
+
+hits <- findOverlaps(bivalent_peaks, annot_10k)
+agg <- aggregate(annot_10k, hits, gene=paste(gene, collapse = ","))
+bivalent_peaks$gene =""
+bivalent_peaks$gene[match(subsetByOverlaps(bivalent_peaks,annot_10k)$ID,
+bivalent_peaks$ID)] = agg$gene
+```
+
+```{r, echo=FALSE}
+bivalent_genes = unique(unlist(strsplit(bivalent_peaks$gene,",")))
+database <- MSIG.ls ##MSigDB
+reflist <- union(unique(hg38.GeneTSS$gene),bivalent_genes);length(reflist)
+
+enrich.test <- geco.enrichmentTest(gene.sets=database,mylist=bivalent_genes,possibleIds=reflist)
+enrich.test <- data.frame(Gene_set_name=rownames(enrich.test), enrich.test, check.names=FALSE)
+enrich.test <- merge( subset(MSIG.gs, select=-Genes), enrich.test, by.x="Gene.Set", by.y="Gene_set_name", all.y=TRUE, sort=FALSE ) ## Get class of gene set
+enrich.test <- enrich.test[order(enrich.test$`p-value`),]
+enrich.test <- enrich.test[order(enrich.test$`p-value`),]
+#ind <- which(enrich.test$`q-value`<= 0.1);if(!length(ind)){ind <- 1:20}
+#Overexpressed  <- enrich.test[ind,]		}
+Bivalent_pathways  <- enrich.test
+
+WriteXLS(
+    c("Bivalent_pathways"),
+    ExcelFileName = file.path(resdir,
+                              paste0("Enrichment_test_Bivalent_pathways.xlsx")), 
+    SheetNames = "Bivalent_pathways",
+    perl = "perl", verbose = FALSE, row.names = FALSE, col.names = TRUE,
+    AdjWidth = TRUE, AutoFilter = TRUE, BoldHeaderRow = TRUE, na = "",
+    FreezeRow = 1, FreezeCol = 1)
+
+View(Bivalent_pathways %>% filter(Class %in% c("c2_curated","C5_GO","hallmark")))
+
+```
+
+    
+```{r, echo=FALSE}
+# Count matrice
+dataDir_sc = file.path(maindir,"input","scChIPseq","PDX","Count_Matrices")
+resultZ_K4 <- read.csv( unzip(zipfile = file.path(dataDir_sc,"HBCx95_m43_UNT_K4_10k_1000.zip"),exdir = tempdir()),sep="\t")
+RZ_K4 <- rowSums(resultZ_K4[,-1])  #RZ matrix is the raw count matrix
+RZ_RPKM_K4 <- (10^9*t(t((RZ_K4+1)/10001/sum(RZ_K4))))
+
+resultZ_K27 <- read.csv(file.path(dataDir_sc,"HBCx95_UNT_K27_10k_1000","HBCx95_m43_UNT.tsv"),sep="\t")
+RZ_K27 <- rowSums(resultZ_K27[,-1]) #RZ matrix is the raw count matrix
+RZ_RPKM_K27 <- (10^9*t(t((RZ_K27+1)/10001/sum(RZ_K27))))
+
+K27_K4_df = data.frame("Gene" = annot_10k$gene, "ID" = annot_10k$ID, "K27" = log2(RZ_RPKM_K27 + 1), "K4" = log2(RZ_RPKM_K4 + 1) )
+K27_K4_df = K27_K4_df[-grep("chrM",K27_K4_df$ID),]
+
+# Corrplot + denisty
+# Bin size control + color palette
+png(file.path(resdir,"Biplot_log2_K27_K4_10k.png"),height = 1200, width = 1200, res = 150)
+hist_bottom <- ggplot(K27_K4_df) + geom_histogram(aes(K27), alpha = 0.65, bins = 150) + theme_classic()
+hist_left <- ggplot(K27_K4_df)+geom_histogram(aes(K4), alpha = 0.65, bins = 150) + coord_flip() + theme_classic()
+empty <- ggplot()+geom_point(aes(1,1), colour="white")+
+         theme(axis.ticks=element_blank(), 
+               panel.background=element_blank(), 
+               axis.text.x=element_blank(), axis.text.y=element_blank(),           
+               axis.title.x=element_blank(), axis.title.y=element_blank())
+top_biv_IDs <- c(head(K27_K4_df$ID[order(K27_K4_df$K27,decreasing=T)],n=7), head(K27_K4_df$ID[order(K27_K4_df$K4,decreasing=T)]))
+
+scatter <- ggplot(K27_K4_df,aes(K27, K4)) + geom_point(alpha=0.65) + ggrepel::geom_label_repel( 
+    data = K27_K4_df %>% filter(ID %in% top_biv_IDs), # Filter data first
+    aes(label=Gene) 
+  ) + theme_classic()
+gridExtra::grid.arrange(hist_bottom, empty, scatter, hist_left, ncol=2, nrow=2, widths=c(4, 1), heights=c(1, 4))
+dev.off()
+
+png(file.path(resdir,"Biplot_log2_K27_K4_10k_smooth.png"),height = 1200, width = 1200, res = 150)
+smoothScatter(K27_K4_df$K27,K27_K4_df$K4,colramp=viridis,pch=19, xlab ="K27 - log2(RPKM)", ylab = "K4 - log2(log2(RPKM))")
+dev.off()
+
+K27_K4_df_filt = K27_K4_df %>% filter(K27>2 & K4>2)
+
+K27_K4_df_filt[grep("FOX",K27_K4_df_filt$Gene),]
+
+bivalent_genes = unique(K27_K4_df_filt$Gene)
+database <- MSIG.ls ##MSigDB
+reflist <- union(unique(hg38.GeneTSS$gene),bivalent_genes);length(reflist)
+
+enrich.test <- geco.enrichmentTest(gene.sets=database,mylist=bivalent_genes,possibleIds=reflist)
+enrich.test <- data.frame(Gene_set_name=rownames(enrich.test), enrich.test, check.names=FALSE)
+enrich.test <- merge( subset(MSIG.gs, select=-Genes), enrich.test, by.x="Gene.Set", by.y="Gene_set_name", all.y=TRUE, sort=FALSE ) ## Get class of gene set
+enrich.test <- enrich.test[order(enrich.test$`p-value`),]
+enrich.test <- enrich.test[order(enrich.test$`p-value`),]
+#ind <- which(enrich.test$`q-value`<= 0.1);if(!length(ind)){ind <- 1:20}
+#Overexpressed  <- enrich.test[ind,]		}
+Bivalent_pathways  <- enrich.test
+
+WriteXLS(
+    c("Bivalent_pathways"),
+    ExcelFileName = file.path(resdir,
+                              paste0("Enrichment_test_Bivalent_pathways_countmat_filt_2.xlsx")), 
+    SheetNames = "Bivalent_pathways",
+    perl = "perl", verbose = FALSE, row.names = FALSE, col.names = TRUE,
+    AdjWidth = TRUE, AutoFilter = TRUE, BoldHeaderRow = TRUE, na = "",
+    FreezeRow = 1, FreezeCol = 1)
+
+View(Bivalent_pathways %>% filter(Class %in% c("c2_curated","C5_GO","hallmark")))
+
+# Overlap with MM468
+bivalent_genes_MM468 = read.csv(file = file.path(maindir,"output","bulk_ChIPseq","MM468","ChIPreChIP","fisher_pvalue_K27_K4_peak_0.001_0.15.csv"))
+bivalent_genes_MM468 = bivalent_genes_MM468$gene[bivalent_genes_MM468$Significant]
+bivalent_genes_MM468 = unique(unlist(str_split(bivalent_genes_MM468,",")))
+
+length(intersect(bivalent_genes_MM468,bivalent_genes))
+length(intersect(bivalent_genes_MM468,bivalent_genes)) / length(bivalent_genes)
+length(bivalent_genes_MM468) / length(unique(hg38.GeneTSS$gene))
+
+
+over_PDX = readxl::read_xlsx(file.path(maindir,"output","scRNAseq","PDX","Supervised","Tables","Differential_analysis_Limma_logFC_1.58.xlsx"))
+pers_genes = over_PDX$Symbol  
+length(intersect(pers_genes,bivalent_genes))
+length(intersect(pers_genes,bivalent_genes)) / length(bivalent_genes)
+length(pers_genes) / length(unique(hg38.GeneTSS$gene))
+
+write.csv(K27_K4_df %>% arrange(desc(K27,K4)), file.path(resdir,"K27_K4_df.csv"))
+```
+
+
+rownames(resultZ_K4) = paste0(resultZ_K4$X,"_", annot_10k$gene)
+head(resultZ_K4)
+#Variables
+annotCol <- c("Treatment","Exp")
+
+rownames(resultZ) <- paste(resultZ$Chromosome,resultZ$Begin,resultZ$End,sep="_")
+
+
+#create RPKM matrix by normalizing per library size and peak length
+
+
+
+```{r, echo=FALSE}
+#Selecting samples for unsupervised analysis
+
+#RZ <- (RZ[,-grep(pattern = "sc",colnames(RZ))]) #remove single cell datasets from analysis
+RZ_sel <- RZ
+colnames(RZ_sel)
+ExpName <- "HBCx95_UNT_K27"
+
+dim(RZ_sel)
+annotZerone_sel <- annotZerone; dim(annotZerone_sel)
+
+exp.sd <- apply(RZ_sel, 1, sd)
+sel2 <- order(exp.sd, decreasing = TRUE)[1:1000]
+RZ_sel2 <- RZ_sel[sel2,,drop=F]; dim(RZ_sel2)
+annotZerone_sel2 <- annotZerone_sel[sel2,,drop=F]
+
+mat <- log2(RZ_RPKM[rownames(RZ_sel2),colnames(RZ_sel2),drop=F])
+dim(mat)
+hist(mat,breaks=100,main="Distribution of log2 pseudo IP")
+
+```
+
+```{r, echo=FALSE}
+library(scTools)
+  resSUBdir <- resdir
+  RDatadir <- file.path(resSUBdir,"RData") ; if(!file.exists(RDatadir)){dir.create(RDatadir)}
+  annotSample <- data.frame(
+    "Name" = colnames(mat),
+    "Treatment"= "UNT")
+  
+  annot_sel = annotSample
+  
+
+  anocol <- geco.annotToCol2(annotS=annot_sel[,c("Name","Treatment"),drop=F],
+                             annotT=annot_sel,plotLegend=T,
+                             plotLegendFile=NULL, categCol=NULL)
+  
+```
+
+5. Comparison K27me3 and K4me3 signal
+```{r, echo=FALSE}
+load(file.path(maindir,"output", "scRNAseq","PDX","Supervised","RData","Supervised_res_object_edgeR.Rdata"))
+
+res= my.res
+
+#Diff
+diff_res = res[which(res$log2FC.persister_6_vs_UNT > log2(3) & res$qval.persister_6_vs_UNT < 0.01 ), ]
+rownames(diff_res) = diff_res$Symbol
+
+annotZerone. = annotZerone %>% tidyr::separate_rows(Gene,sep=",")
+annotZerone. = annotZerone.[which(annotZerone.$Gene %in% diff_res$Symbol),]
+annotZerone. = annotZerone.[which(annotZerone.$distance_all <1000),]
+
+contingency_table_diff = data.frame(OverlappingPersister = table(annotZerone.$K4)[2:1],
+                                Total= table(annotZerone$K4[which( (annotZerone$distance_all < 1000) & !is.na(annotZerone$Gene)) ])[2:1],
+                                row.names = c("Bivalent","Non bivalent"))[,c(2,4)]
+contingency_table_diff
+# load(file.path(maindir,"output","scRNAseq","MM468_PDX","common_over_genes_pers_vs_unt_log2FC1.58.RData"))
+# common_overexpressed_genes
+# annotZerone. %>% dplyr::filter(Gene %in% common_overexpressed_genes)
+
+(fdiff = fisher.test(contingency_table_diff))
+ 
+vec = c(as.numeric(contingency_table_diff[1,]/(contingency_table_diff[1,]+contingency_table_diff[2,])))
+df = data.frame(percentage_bivalent = round(100*vec[2:1]),type = factor(c("Total","PersisterGenes"),levels = c("Total","PersisterGenes")))
+
+library(ggpubr)
+stat.test = data.frame(.y. = "percentage_bivalent",
+                       group1 = "Total" ,
+                       group2 = "PersisterGenes",
+                       p = fdiff$p.value,
+                       p.adj = fdiff$p.value,
+                       p.format = fdiff$p.value,
+                       p.signif = "****",
+                       method="Fisher Test")
+
+
+  png(file.path(resSUBdir,"Bivalent_enrichment_in_persisterGenes.png"), res=300, width = 800, height = 1500)
+  df %>% ggplot(aes(x=type,y=percentage_bivalent)) + geom_bar(aes(fill=type),stat ="identity", width = 0.5) + stat_pvalue_manual(data=stat.test,label = "p", y.position = 35) + ggtitle(paste0("Bivalent peaks enriched in overexpressed persister genes (PDX)")) +
+      theme_classic() + scale_fill_manual(values = c("#000000ff","#ff0000ff"))  +
+      theme(axis.text.x = element_text(angle = 90, vjust =1), legend.position = "None") +
+      ylab("Proportion of bivalent peaks (%)") + xlab("") + ylim(c(0,50))
+  
+  dev.off()
+
+```
+
+
+
