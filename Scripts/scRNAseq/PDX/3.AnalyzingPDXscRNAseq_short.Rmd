@@ -29,7 +29,7 @@ RDatadir <- file.path(resSUBdir,"RData") ; if(!file.exists(RDatadir)){dir.create
 ```
 
 ```{r loads}
-load(file.path(RDatadir,"HBCx95.RData"))
+load(file.path(RDatadir,"PDX.RData"))
 load(file.path(RDatadir,"pca.RData")) #if starting from prior analysis
 load(file.path(RDatadir,"annot_anocol_final.RData"))#if starting from prior analysis
 load(file.path(RDatadir,"umap.RData"))#if starting from prior analysis
@@ -67,10 +67,11 @@ DimPlot(marrow, reduction = "pca")
 DimHeatmap(marrow, dims = 1:3, cells = 1000, balanced = TRUE)
 ElbowPlot(marrow)
 marrow <- FindNeighbors(marrow, dims = 1:20)
-marrow  <- FindClusters(marrow, resolution = 0.5)
 marrow <- RunUMAP(marrow, dims = 1:20)
+marrow <- Seurat::FindClusters(marrow)
 
-DimPlot(marrow, reduction = "umap")
+marrow$orig.ident = sub("_[A-Z]*$","",colnames(marrow))
+DimPlot(marrow, group.by = "orig.ident",reduction = "umap")
 
 marrow <- CellCycleScoring(marrow, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
 annot_seurat <- data.frame (Seurat_cluster=paste0("C",marrow$seurat_clusters),cell_cycle=marrow$Phase)
@@ -116,6 +117,7 @@ if(!(file.exists(file.path(RDatadir,"NormCounts.RData")) & file.exists(file.path
     
     save(NormCounts,file=file.path(RDatadir,"NormCounts.RData"))
     save(LogCounts,file=file.path(RDatadir,"LogCounts.RData"))
+    save(annot_int,file=file.path(RDatadir,"annot_int.RData"))
     rm(NormCounts); gc()
     rm(cds); gc()
 }
@@ -141,7 +143,6 @@ pcaText <- FALSE
 annotText <- "sample_id"
 hcText <- "sample_id"  
 load(file.path(RDatadir,"LogCounts.RData"))
-load(file.path(RDatadir,"annot_anocol_final.RData"))
 
 annotCol <- c("sample_id","total_features","cell_cycle","rRNA","clustCol4",
               "clustCol5","clustCol6","louvain_partition", "louvain_cluster",
@@ -155,13 +156,13 @@ annot_int$rRNA <- apply(LogCounts[ribo,],2,mean)
 anocol <- geco.unsupervised::geco.annotToCol4(annotS=annot_int[,annotCol],annotT=annot_int,plotLegend=T,plotLegendFile=file.path(resSUBdir,"Annotation_legends.pdf"), scale_q = "inferno")
 
 #Common palette for all MM468 experiments
-control <- c("#E0E0E0","#BDBDBD","#757575")
+control <- c("#E0E0E0","#BDBDBD","#757575","#ffcbcb")
 persister_color <- c("#DCEDC8","#9CCC65","#4CAF50","#009688")
 res_color <- c("#FFEB3B","#FFC107","#FF9800","#FF5722")
-color_PDX <- c(control[c(1,2)],persister_color[c(1,3)],res_color[c(2)],"#ffcbcb")
+color_PDX <- c(control[c(1,4,2)],persister_color[c(1,3)],res_color[c(2)])
 
 
-samples_PDX = c("HBCx95_v3_UNT","HBCx95_m9_50_REC","HBCx95_persister_2souris","HBCx95_persister_6souris","HBCx95_m30_CAPAR","HBCx95_m6_CAPAS")
+samples_PDX = c("HBCx95_chemonaive", "HBCx95_responder", "HBCx95_recurrent", "HBCx95_residual", "HBCx95_persister",   "HBCx95_resistant")
 corres <- data.frame(PDX=samples_PDX,color=color_PDX)
 anocol[,"sample_id"] <- as.character(corres$color[match(annot_int$sample_id,corres$PDX)])
 
@@ -173,8 +174,8 @@ corres_cluster <- data.frame(phase=c("C1","C2","C3","C4","C5"),color=c("#b9cced"
 indice <- which(annotCol=="clustCol5")
 anocol[,indice] <- as.character(corres_cluster$color[match(annot_int$clustCol5,corres_cluster$phase)])
 corres_cluster <- data.frame(phase=c("C1","C2","C3","C4","C5"),color=c("#438a5e","#6a8caf","#ff9c71","#e2979c","#b9cced"))
-indice <- which(annotCol=="louvain_partition")
-anocol[,indice] <- as.character(corres_cluster$color[match(annot_int$louvain_partition,corres_cluster$phase)])
+indice <- which(annotCol=="louvain_cluster")
+anocol[,indice]  <- as.character(corres_cluster$color[match(annot_int$louvain_cluster,corres_cluster$phase)])
 
 
 png(file.path(resSUBdir,"Legend_sample_scRNAseq.png"), height=2000,width=1500,res=300)
@@ -191,11 +192,10 @@ png(file.path(resSUBdir_boxplots,"Boxplot_rRNA.png"),width=1500,height=1500,res=
 boxplot(annot_int$rRNA~annot_int$sample_id,las=2)
 dev.off()
 
-test <- wilcox.test(annot_int$rRNA[which(annot_int$sample_id %in% c("HBCx95_persister_6souris"))],
-                    annot_int$rRNA[which(annot_int$sample_id == "HBCx95_v3_UNT")]) 
-median(annot_int$rRNA[which(annot_int$sample_id %in% c("HBCx95_persister_6souris"))])
-median(annot_int$rRNA[which(annot_int$sample_id %in% c("HBCx95_v3_UNT"))])
-
+test <- wilcox.test(annot_int$rRNA[which(annot_int$sample_id %in% c("HBCx95_persister"))],
+                    annot_int$rRNA[which(annot_int$sample_id == "HBCx95_chemonaive")]) 
+median(annot_int$rRNA[which(annot_int$sample_id %in% c("HBCx95_persister"))])
+median(annot_int$rRNA[which(annot_int$sample_id %in% c("HBCx95_chemonaive"))])
 
 save(anocol,annot_int,file=file.path(RDatadir,"annot_anocol_final.RData")) 
 ```
@@ -229,6 +229,7 @@ for(j in 1:ncol(anocol))
 
 # Subsample plot
 scExp = create_scExp(LogCounts,annot_int[,1:4])
+set.seed(47)
 scExp = subsample_scExp(scExp,n_cells = 500)
 umap_res_sub = umap_res[scExp$cell_id,]
 anocol_sub = anocol[scExp$cell_id,]
@@ -257,7 +258,7 @@ png(file.path(resSUBdir_heatmaps,"Clustering_correlation_matrix_PCA_all_annot.pn
 geco.hclustAnnotHeatmapPlot(x=cor(mat.so.cor),
                             hc=hc_PCA,
                             hmColors=corColors,
-                            anocol=anocol[hc_PCA$order,],#[,ncol(cc.col):1]
+                            anocol=anocol[hc_PCA$order,c("sample_id","total_features","louvain_cluster")],#[,ncol(cc.col):1]
                             xpos=c(0.15,0.9,0.164,0.885),
                             ypos=c(0.1,0.5,0.5,0.6,0.62,0.95),
                             dendro.cex=0.1,
@@ -341,16 +342,19 @@ resdir_boxplots <-  file.path(resdir_supervised,"Boxplots");if(!file.exists(resd
 resdir_UMAPs <-  file.path(resdir_supervised,"UMAP");if(!file.exists(resdir_UMAPs)){dir.create(resdir_UMAPs)}
 resdir_heatmaps <-  file.path(resdir_supervised,"Heatmaps");if(!file.exists(resdir_heatmaps)){dir.create(resdir_heatmaps)}
 
-load(file.path(resSUBdir,"RData","RawCounts_features.RData"))
 load(file.path(resSUBdir,"RData","all_sub_500.RData"))
-
-RawCounts_sub = RawCounts[,annot_sel2_sub$cell_id]
+load(file.path(resSUBdir,"RData","PDX.RData"))
+RawCounts = Signal
 gc()
-metadata = annot_sel2_sub
+RawCounts_sub = RawCounts[,annot_int_sub$cell_id]
+gc()
+metadata = annot_int_sub
+feature = gene_metadata
 
+table(metadata$louvain_partition, metadata$sample_id)
 #Get the gene list of Persister cells (6souris) overexpressed
 mygps <- list(
-'persister_6_vs_UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_persister_6souris") ),"cell_id"],
+'persister_vs_UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_persister") ),"cell_id"],
 'C2_vs_UNT'=metadata[which(metadata$louvain_partition %in% c("C2") ),"cell_id"],
 'C3_vs_UNT'=metadata[which(metadata$louvain_partition %in% c("C3") ),"cell_id"],
 'C4_vs_UNT'=metadata[which(metadata$louvain_partition %in% c("C4") ),"cell_id"]
@@ -358,10 +362,10 @@ mygps <- list(
 sapply(mygps,length)
 
 myrefs <- list(
-    'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_v3_UNT") ),"cell_id"],
-    'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_v3_UNT") ),"cell_id"],
-    'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_v3_UNT") ),"cell_id"],
-    'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_v3_UNT") ),"cell_id"]
+    'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_chemonaive") ),"cell_id"],
+    'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_chemonaive") ),"cell_id"],
+    'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_chemonaive") ),"cell_id"],
+    'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_chemonaive") ),"cell_id"]
 )
 sapply(myrefs,length)
 
@@ -378,15 +382,15 @@ my.res <- geco.CompareedgeRGLM (dataMat=RawCounts_sub,
                                 featureTab=feature
 )
 
-log2FC_thresholds <- log2(c(2,3,4))
+log2FC_thresholds <- log2(c(3))
 Signif_threshold <- 0.01
 
 for(log2FC_threshold in log2FC_thresholds){
   for(i in 1:length(myrefs)){
     ref = names(myrefs)[i]
-    logFC_name = (paste0("log2FC.persister_6_vs_UNT",ref))
-    qval_name = (paste0("qval.persister_6_vs_",ref))
-    count_name = (paste0("logCPM.persister_6_vs_",ref))
+    logFC_name = (paste0("log2FC.persister_vs_", ref))
+    qval_name = (paste0("qval.persister_vs_", ref))
+    count_name = (paste0("logCPM.persister_vs_", ref))
     cat("Saving for FC =",2^log2FC_threshold,"\n")
     under_res = my.res %>% dplyr::filter(
          .data[[logFC_name]] < -log2FC_threshold &

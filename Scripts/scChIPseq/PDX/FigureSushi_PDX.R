@@ -113,7 +113,7 @@ for(i in 1:length(regions)){
                  range = c(0,max2),
                  addscale = TRUE,
                  ylab="sc_UNT_K27",
-                 color="gray88",cex.lab=1,cex.main=2.1)
+                 color="#dadadaff",cex.lab=1,cex.main=2.1)
     
     #sc K4
     plotBedgraph(as.data.frame(HBCx95_UNT_K4_tmp)[,c(1,2,3,6)],
@@ -121,7 +121,7 @@ for(i in 1:length(regions)){
                  range = c(0,max1),
                  addscale = TRUE,
                  ylab="sc_UNT_K4",
-                 color="#A6A6A6FF",cex.lab=1,cex.main=2.1)
+                 color="#dadadaff",cex.lab=1,cex.main=2.1)
     
     par(mar = c(1, 6, 1, 1),xpd=NA)
     

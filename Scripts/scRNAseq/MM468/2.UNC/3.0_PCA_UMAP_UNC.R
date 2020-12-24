@@ -23,7 +23,7 @@ annot_int <- annot
 
 # Select initial population, 4 'persister' states (early), 3 'resistant' states (late) and UNC sample
 sample_UNC_study = c(
-  "MM468_initial","MM468_5FU6_day33", "MM468_UNC_day33","MM468_5FU3_day50","MM468_5FU5_day67",
+  "MM468_chemonaive","MM468_5FU6_day33", "MM468_UNC_day33","MM468_5FU3_day50","MM468_5FU5_day67",
   "MM468_5FU3_day77", "MM468_5FU5_day171","MM468_5FU3_day202",
   "MM468_5FU6_day214"
   )
@@ -180,24 +180,24 @@ if(length(indice) >0 ){
   dev.off()
   
   png(file.path(resdir_UMAP,paste0("exp3_UMAP_",colnames(anocol)[indice],".png")),height=1150,width=950,res=350)
-  plot((umap_res[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_initial","MM468_5FU3_day50","MM468_5FU3_day77","MM468_5FU3_day202"),]),
-       col=alpha(anocol[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_initial","MM468_5FU3_day50","MM468_5FU3_day77","MM468_5FU3_day202"),indice],0.8),
+  plot((umap_res[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU3_day50","MM468_5FU3_day77","MM468_5FU3_day202"),]),
+       col=alpha(anocol[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU3_day50","MM468_5FU3_day77","MM468_5FU3_day202"),indice],0.8),
        pch=20,cex=0.6,main=paste0(colnames(anocol)[indice]," perplexity=30"),
        xlab="component 1",ylab="component 2",ylim=c(min(umap_res[,2]),max(umap_res[,2])), xlim=c(min(umap_res[,1]),max(umap_res[,1])))
   dev.off()
   
   png(file.path(resdir_UMAP,paste0("exp5_UMAP_",colnames(anocol)[indice],".png")), height=1150,width=950,res=350) 
   indice <- which(annotCol=="cons_BC_lenti")
-  plot((umap_res[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_initial","MM468_5FU5_day67","MM468_5FU5_day171"),]),
-       col=alpha(anocol[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_initial","MM468_5FU5_day67","MM468_5FU5_day171"),indice],0.8),
+  plot((umap_res[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU5_day67","MM468_5FU5_day171"),]),
+       col=alpha(anocol[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU5_day67","MM468_5FU5_day171"),indice],0.8),
        pch=20,cex=0.6,main=paste0(colnames(anocol)[indice]," perplexity=30"),
        xlab="component 1",ylab="component 2",ylim=c(min(umap_res[,2]),max(umap_res[,2])), xlim=c(min(umap_res[,1]),max(umap_res[,1])))
   dev.off()
   
   png(file.path(resdir_UMAP,paste0("exp6_UMAP_",colnames(anocol)[indice],".png")), height=1150,width=950,res=350) 
   indice <- which(annotCol=="cons_BC_lenti")
-  plot((umap_res[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_initial","MM468_5FU6_day33","MM468_5FU6_day214"),]),
-       col=alpha(anocol[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_initial","MM468_5FU6_day33","MM468_5FU6_day214"),indice],0.8),
+  plot((umap_res[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU6_day33","MM468_5FU6_day214"),]),
+       col=alpha(anocol[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU6_day33","MM468_5FU6_day214"),indice],0.8),
        pch=20,cex=0.6,main=paste0(colnames(anocol)[indice]," perplexity=30"),
        xlab="component 1",ylab="component 2",ylim=c(min(umap_res[,2]),max(umap_res[,2])), xlim=c(min(umap_res[,1]),max(umap_res[,1])))
   dev.off()
@@ -270,7 +270,7 @@ dev.off()
 #Plot repartition of Expression groups with time
 corres_day <- data.frame(Sample=sample_UNC_study,
                           day=gsub(".*day","",sample_UNC_study))
-corres_day[which(corres_day$Sample=="MM468_initial"),"day"] = 0
+corres_day[which(corres_day$Sample=="MM468_chemonaive"),"day"] = 0
 corres_day$day = as.numeric(corres_day$day)
 annot_int$day <- as.integer(corres_day$day[match(annot_int$sample_id,corres_sample$Sample)])
 

@@ -1,18 +1,23 @@
+rm(list=ls())
+library(here)
+source(file.path(here(),"Scripts","functions.R"))
+source(file.path(here(),"Scripts","global_var.R"))
 library(ccRemover)
-options(stringsAsFactors = F)
-expName <- "HBCx95"
+
+expName <- "PDX"
+
+maindir = here()
 
 # Directories -------------------------------------------------------------
-resdir <- "/media/pacome/LaCie/InstitutCurie/Z_server/Manuscripts/2020_ChemoTolerance/Raw_analysis/scRNAseq/Results_PDX/"
-resSUBdir <- file.path(resdir, paste0("Unsupervised")) ; if(!file.exists(resSUBdir)){dir.create(resSUBdir)}
+outdir = file.path(maindir, "output","scRNAseq", "PDX");  if(!dir.exists(outdir)){dir.create(outdir)}
+resSUBdir <- file.path(outdir, paste0("Unsupervised")) ; if(!file.exists(resSUBdir)){dir.create(resSUBdir)}
 RDatadir <- file.path(resSUBdir,"RData") ; if(!file.exists(RDatadir)){dir.create(RDatadir)}
 RDatadirSamples <- file.path(RDatadir,"RData_perSample") ; if(!file.exists(RDatadirSamples)){dir.create(RDatadirSamples)}
 
-setwd(RDatadirSamples)
 for(f in list.files(RDatadirSamples,full.names=TRUE)) load(f)
 
 # Combining samples -------------------------------------------------------
-all_annots <-grep("metadata",names(.GlobalEnv),value=TRUE)
+all_annots <- grep("metadata",names(.GlobalEnv),value=TRUE)
 annot <- do.call("rbind",mget(all_annots))
 rownames(annot) <- annot$cell_id
 
@@ -22,31 +27,38 @@ NAMES <- vector()
 for (i in 1: length(all_counts)){
   NAMES <- c(NAMES, rownames(get(all_counts[i])))
 }
-Names <- unique(NAMES)
-
-Signal <- matrix(0,nrow = length(Names),ncol=dim(annot)[1])
-rownames(Signal) <- Names
-colnames(Signal) <- annot$cell_id
-
+#if gene names start with hg19
+Names_short <- sub("hg19_","",NAMES)
+Names <- unique(Names_short)
 
 SAMPLES <- names(table(annot$sample_id))
 
-for( i in 1:length(SAMPLES)){
+gene_metadata <- data.frame(Symbol=Names, gene_short_name=Names, cell_cycle=NA)
+
+count_list = list()
+for(i in 1:length(SAMPLES)){
   counts.sample <- get(paste0("counts.",SAMPLES[i]))
-  Signal[rownames(counts.sample),as.vector(annot$cell_id[annot$sample_id %in% SAMPLES[i]])] <- as.matrix(counts.sample)
+  rownames(counts.sample) = sub("hg19_","",rownames(counts.sample))
+  missing = setdiff(Names, rownames(counts.sample))
+  mat_missing = as(matrix(0, nrow=length(missing), ncol = ncol(counts.sample),
+                          dimnames = list(missing,colnames(counts.sample))),"dgCMatrix")
+  counts.sample. = rbind(counts.sample, mat_missing)
+  count_list[[SAMPLES[i]]] <- counts.sample.[match(Names,rownames(counts.sample.)),]
+  rm(counts.sample., counts.sample)
+  gc()
 }
 
-#if gene names start with hg19
-if(substr(Names[1],0,4)=="hg19") {
-  Names_short <- sub("hg19_","",Names)
-  gene_metadata <- data.frame(Symbol=Names_short, gene_short_name=Names_short, cell_cycle=NA)
-} else {
-  gene_metadata <- data.frame(Symbol=Names, gene_short_name=Names, cell_cycle=NA)
-  
-}
+Signal <- do.call("cbind",count_list)
+gc()
+if(length(which(rowSums(Signal) == 0))>0) Signal = Signal[-which(rowSums(Signal)==0),]
+if(length(which(colSums(Signal) == 0))>0) Signal = Signal[,-which(colSums(Signal)==0)]
+gc()
 
 #gene_metadata <- data.frame(Symbol=Names, gene_short_name=Names, cell_cycle=NA)
 gene_metadata$cell_cycle <- (gene_metadata$Symbol %in% human_cell_cycle_genes$HGNC.symbol)
-rownames(gene_metadata) <- Names
+rownames(gene_metadata) <- gene_metadata$Symbol
+gene_metadata = gene_metadata[match(rownames(Signal), rownames(gene_metadata)),]
+annot = annot[match(colnames(Signal), rownames(annot)),]
+save(annot, Signal, gene_metadata, file=file.path(RDatadir,paste0(expName,".RData")))
 
-save(annot,Signal,gene_metadata, file=file.path(RDatadir,paste0(expName,".RData")))
+

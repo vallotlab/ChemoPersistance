@@ -9,7 +9,7 @@ ref_genome ="hg38"
 
 metadata = data.frame(sample_id = c(
     "MM468_DMSO6_D0_K4", "MM468_5FU6_D60_K4"),
-    sample_id_color = c("#dfdfdfff", "#118675ff"))
+    sample_id_color = c("#afafafff", "#1AB8AD"))# "#009688ff"))
 
 datadir = file.path(maindir, "input", "scChIPseq", "MM468")
 outdir = file.path(maindir, "output", "scChIPseq", "MM468",dataset_name)
@@ -41,13 +41,8 @@ set.seed(47)
 ## Input Data ##
 ################
 
-tmp = tempdir()
-unzip(file.path(datadir,"Count_Matrices", "MM468_K4_transcripts_10k_1000.zip"),
-      exdir = tmp)
-list.files(tmp,pattern = ".*.tsv")
-# Reading in matrices
-out <- import_scExp(c(file.path(tmp,"MM468_DMSO6_D0_K4.tsv"),
-                      file.path(tmp,"MM468_5FU6_D60_K4.tsv")))
+out <- import_scExp_gz(file.path(datadir,"Count_Matrices"),
+                       pattern = "*_H3K4me3_TSS.tsv.gz")
 
 # Save raw
 datamatrix = out$datamatrix

@@ -37,7 +37,7 @@ mygps <- list(
 'UNC'=metadata[which(metadata$sample_id %in% c("MM468_UNC_day33") ),"cell_id"]
 )
 myrefs <- list(
-'DMSO'=metadata[which(metadata$sample_id %in% c("MM468_initial") ),"cell_id"]
+'DMSO'=metadata[which(metadata$sample_id %in% c("MM468_chemonaive") ),"cell_id"]
 ) # Sets reference (can be 1 or more samples)
 
 refs <- names(myrefs) 

@@ -11,6 +11,10 @@ maindir = here()
 outdir = file.path(maindir,"output","scChIPseq","MM468","Coocurrence_K4")
 if(!dir.exists(outdir)) dir.create(outdir)
 
+metadata = data.frame(sample_id = c(
+  "MM468_DMSO1_day0", "MM468_5FU1_day60"),
+  sample_id_color = c("#afafafff", "#1AB8AD"))# "#009688ff"))
+
 # Find association Gene to Peak by using MM468 K4 peaks "consensus annotation" obtained from bulk ChIPseq
 
 # Load Transcripts of hg38, merged if closer to 10k:
@@ -31,6 +35,12 @@ differential_results_K4 <- readxl::read_xlsx(file.path(
 differential_results_scRNA <- readxl::read_xlsx(file.path(
   maindir,"output","scRNAseq","MM468","Persister","Supervised","Tables",
   "Differential_analysis_Limma_logFC_1.58.xlsx"),sheet = 1)
+
+persister_K27_regulated = readxl::read_xls(file.path(
+  maindir,"output","scRNAseq","MM468","Persister","ComparisonChIPseq",
+  "K27","persister_K27_status.xls"),sheet = 1)
+persister_K27_regulated_genes = persister_K27_regulated$Symbol[which(persister_K27_regulated$K27_status %in% c("Depleted FC < -3","Depleted FC < -2"))]
+persister_K27_regulated_regions = annot10k_byGene$ID[which(annot10k_byGene$gene %in% persister_K27_regulated_genes)]
 
 # differential_results_K4$ID = sub("-",":",gsub("_","-",differential_results_K4$ID))
 overexpressed_MM468_persister_genes = differential_results_scRNA$Symbol  
@@ -67,6 +77,7 @@ subset_int$scRNA_status[which(subset_int$log2FC_scRNA < -log2(2) )] = "Underexpr
 table(subset_int$scRNA_status)
 not_overexpressed_but_deregulated_K27_regions = subset_int$ID[subset_int$scRNA_status=="Not Overexpressed"]
 not_overexpressed_but_deregulated_K27_genes = subset_int$gene[subset_int$scRNA_status=="Not Overexpressed"]
+
 # Load house keeping genes
 # From  https://www.genomics-online.com/resources/16/5049/housekeeping-genes/
 # Eisenberg, Levanon: “Human housekeeping genes, revisited.
@@ -87,37 +98,26 @@ selected_genes <- c(house_keeping_genes,overexpressed_MM468_persister_genes_K27,
 # Find transcripts corresponding to overexpressed "persister genes"
 annot10k_selected = annot10k[match(selected_regions, annot10k$ID),]
 
-mark = list("K4" = c())
+mark = list()
 i=0
-for(archive in c("MM468_K4_transcripts_10k_1000.zip")){
-  i = i +1
-  file_names = basename(unzip(file.path(
-    maindir,"input","scChIPseq","MM468","Count_Matrices",archive),
-    list = T, exdir = tempdir())$Name)
-  list_files = vector("list", length(file_names[grep(".tsv",file_names)]))
-  names(list_files) = gsub(".tsv","",file_names[grep(".tsv",file_names)])
-  path_matrices = file.path(  maindir,"input","scChIPseq",
-                              "MM468","Count_Matrices",
-                              archive)
+dir = file.path(maindir,"input","scChIPseq","MM468","Count_Matrices")
+for(files in list.files(dir,pattern = ".*H3K4me3_TSS.tsv.gz")){
   
+  mat = read.csv(gzfile(file.path(dir,files)),sep="\t")
+  name = gsub("_H3K4me3_TSS.tsv.gz","",files)
+  colnames(mat) = paste0(name,"_", colnames(mat))
+  mat = mat[,-1]
   #10k counts
-  for(file in names(list_files)) {
-    list_files[[file]] = scater::readSparseCounts(
-      unzip(zipfile = path_matrices,files = paste0(file,".tsv"), 
-            exdir = tempdir()))
-    colnames(list_files[[file]]) = paste0(file,"_",
-                                          colnames(list_files[[file]]))
-  }
-  mark[[i]] = list_files
+  mark[[name]] = mat
 }
 
 # Determine the cells with the top cells with the most efficient IP 
 # (the most presence of H3K4me3 fragments for housekeeping genes)
-runGini = FALSE
+runGini = TRUE
 if(runGini){
 
-  mat <- mark$K4$MM468_DMSO6_D0_K4
-  mat_housekeeping <- mat[house_keeping_genes_region,]
+  mat <- mark$MM468_DMSO1_day0
+  mat_housekeeping <- mat[which(annot10k$ID %in% house_keeping_genes_region) ,]
   bin_mat = mat_housekeeping
   bin_mat[(bin_mat>0)]=1
   coocurrence_K4me3_score_housekeeping = as.data.frame(
@@ -129,13 +129,13 @@ if(runGini){
   
   mat_top  <- mat[,top_cells_init]
   Gin_unt = edgeR::gini(t(mat_top))
-  Gini_focus = Gin_unt[match(selected_regions,names(Gin_unt))]
+  Gini_focus = Gin_unt[match(selected_regions,annot10k$ID)]
   Gini_focus = data.frame(Gini_focus,0)
-  colorlist = ifelse(rownames(Gini_focus) %in%
+  colorlist = ifelse(selected_regions %in%
                        annot10k_housekeeping$ID, "grey", "red")
   Gini_focus_DMSOi <- Gini_focus
   
-  mat_over <- mat_top[overexpressed_MM468_persister_region_K27,]
+  mat_over <- mat_top[which((annot10k$ID %in% overexpressed_MM468_persister_region_K27)),]
   mat_over_DMSOi <- mat_over
   
   bin_mat = mat_over_DMSOi
@@ -144,25 +144,25 @@ if(runGini){
     Matrix::colSums(bin_mat) / nrow(bin_mat))
   colnames(coocurrence_K4me3_score_bivalent_DMSOi) = "Coocurrence_score"
   
-  pdf(file.path(outdir,"GiniScores_K4_DMSOi_ChIP_based.pdf"),
-      width = 12)
-  plot(0,0,type="n",xlim=c(-0.06,1.06), ylim=c(0,2),
-       yaxt = 'n', main ="Gini Scores")
-  for (i in 1:length(Gini_focus$Gini_focus)) { 
-    stripchart(Gini_focus$Gini_focus[i],
-               add = T, bg = colorlist[i],
-               vertical = F, pch =21, method = "jitter") }
-  text(Gini_focus$Gini_focus,
-       (runif(length(Gini_focus$Gini_focus))/2) +
-         rep(c(0,1.5),length(Gini_focus$Gini_focus)/2), 
-       cex = 0.75,
-       labels = annot10k$gene[annot10k$ID %in% rownames(Gini_focus)],
-       srt = 75, col = colorlist)
-  dev.off()
+  # pdf(file.path(outdir,"GiniScores_K4_DMSOi_ChIP_based.pdf"),
+  #     width = 12)
+  # plot(0,0,type="n",xlim=c(-0.06,1.06), ylim=c(0,2),
+  #      yaxt = 'n', main ="Gini Scores")
+  # for (i in 1:length(Gini_focus$Gini_focus)) { 
+  #   stripchart(Gini_focus$Gini_focus[i],
+  #              add = T, bg = colorlist[i],
+  #              vertical = F, pch =21, method = "jitter") }
+  # text(Gini_focus$Gini_focus,
+  #      (runif(length(Gini_focus$Gini_focus))/2) +
+  #        rep(c(0,1.5),length(Gini_focus$Gini_focus)/2), 
+  #      cex = 0.75,
+  #      labels = annot10k$gene[annot10k$ID %in% selected_regions],
+  #      srt = 75, col = colorlist)
+  # dev.off()
   
   #Determine the cells with the top cells with the most efficient IP (the most presence of H3K4me3 fragments for housekeeping genes)
-  mat <- mark$K4$MM468_5FU6_D60_K4
-  mat_housekeeping <- mat[house_keeping_genes_region,]
+  mat <- mark$MM468_5FU1_day60
+  mat_housekeeping <- mat[which(annot10k$ID %in% house_keeping_genes_region),]
   bin_mat = mat_housekeeping
   bin_mat[(bin_mat>0)]=1
   coocurrence_K4me3_score_housekeeping = as.data.frame(
@@ -174,13 +174,13 @@ if(runGini){
   
   mat_top  <- mat[,top_cells_pers]
   Gin_unt = edgeR::gini(t(mat_top))
-  Gini_focus = Gin_unt[match(selected_regions,names(Gin_unt))]
+  Gini_focus = Gin_unt[match(selected_regions,annot10k$ID)]
   Gini_focus = data.frame(Gini_focus,0)
-  colorlist = ifelse(rownames(Gini_focus) %in%
+  colorlist = ifelse(selected_regions %in%
                        annot10k_housekeeping$ID, "grey", "red")
   Gini_focus_pers <- Gini_focus
   
-  mat_over <- mat_top[overexpressed_MM468_persister_region_K27,]
+  mat_over <- mat_top[match(overexpressed_MM468_persister_region_K27,annot10k$ID),]
   mat_over_pers <- mat_over
   
   bin_mat = mat_over_pers
@@ -189,74 +189,42 @@ if(runGini){
     Matrix::colSums(bin_mat) / nrow(bin_mat))
   colnames(coocurrence_K4me3_score_pers) = "Coocurrence_score"
   
-  pdf(file.path(outdir,"GiniScores_K4_DMSOi_ChIP_based.pdf"),
-      width = 12)
-  plot(0,0,type="n",xlim=c(-0.06,1.06), ylim=c(0,2),
-       yaxt = 'n', main ="Gini Scores")
-  for (i in 1:length(Gini_focus$Gini_focus)) { 
-    stripchart(Gini_focus$Gini_focus[i],
-               add = T, bg = colorlist[i],
-               vertical = F, pch =21, method = "jitter") }
-  text(Gini_focus$Gini_focus,
-       (runif(length(Gini_focus$Gini_focus))/2) +
-         rep(c(0,1.5),length(Gini_focus$Gini_focus)/2), 
-       cex = 0.75,
-       labels = annot10k$gene[annot10k$ID %in% rownames(Gini_focus)],
-       srt = 75, col = colorlist)
-  dev.off()
-  
-  
-  pdf(file.path(outdir,"GiniScores_H3K4me3_5FU6_vs_DMSO_dotplot_ChIPbased.pdf"),
-      width = 12)
-  plot(Gini_focus_pers$Gini_focus~Gini_focus_DMSOi$Gini_focus,
-       col=colorlist,pch=19,ylim=c(0.3,1),xlim=c(0.3,1))
-  abline(a=0,b=1)
-  text(Gini_focus_pers$Gini_focus~Gini_focus_DMSOi$Gini_focus,cex = 0.75,
-       labels = annot10k$gene[annot10k$ID %in% rownames(Gini_focus)],
-       srt = 75, col = colorlist)
-  dev.off()
+  # pdf(file.path(outdir,"GiniScores_K4_DMSOi_ChIP_based.pdf"),
+  #     width = 12)
+  # plot(0,0,type="n",xlim=c(-0.06,1.06), ylim=c(0,2),
+  #      yaxt = 'n', main ="Gini Scores")
+  # for (i in 1:length(Gini_focus$Gini_focus)) { 
+  #   stripchart(Gini_focus$Gini_focus[i],
+  #              add = T, bg = colorlist[i],
+  #              vertical = F, pch =21, method = "jitter") }
+  # text(Gini_focus$Gini_focus,
+  #      (runif(length(Gini_focus$Gini_focus))/2) +
+  #        rep(c(0,1.5),length(Gini_focus$Gini_focus)/2), 
+  #      cex = 0.75,
+  #      labels = annot10k$gene[which(annot10k$ID %in% selected_regions)],
+  #      srt = 75, col = colorlist)
+  # dev.off()
+  # 
+  # 
+  # pdf(file.path(outdir,"GiniScores_H3K4me3_5FU6_vs_DMSO_dotplot_ChIPbased.pdf"),
+  #     width = 12)
+  # plot(Gini_focus_pers$Gini_focus~Gini_focus_DMSOi$Gini_focus,
+  #      col=colorlist,pch=19,ylim=c(0.3,1),xlim=c(0.3,1))
+  # abline(a=0,b=1)
+  # text(Gini_focus_pers$Gini_focus~Gini_focus_DMSOi$Gini_focus,cex = 0.75,
+  #      labels = annot10k$gene[annot10k$ID %in% rownames(Gini_focus)],
+  #      srt = 75, col = colorlist)
+  # dev.off()
    
   
   # Violin plot co-occurence score
-  mat_pers = mark$K4$MM468_5FU6_D60_K4
-  mat_init = mark$K4$MM468_DMSO6_D0_K4
+  mat_pers = mark$MM468_5FU1_day60[which(annot10k$ID %in% overexpressed_MM468_persister_region_K27),]
+  mat_init = mark$MM468_DMSO1_day0[which(annot10k$ID %in% overexpressed_MM468_persister_region_K27),]
   
-  png(file.path(outdir,paste0("Coocurrence_score_overpers_K4_violin_ChIPbased.png")),
+  png(file.path(outdir,paste0("Coocurrence_score_overpers_K4_violin.png")),
       height=1000,width=1500,res=300)
-  violin_plot_cooccurence(mat_init,mat_pers,
-                          sub_regions =  overexpressed_MM468_persister_region_K27,
-                          sub_cells = list(top_cells_init,top_cells_pers))
-  dev.off()
-
- 
-  
-  init = rowSums(mat_init[overexpressed_MM468_persister_region_K27,top_cells_init])
-  pers = rowSums(mat_pers[overexpressed_MM468_persister_region_K27,top_cells_pers])
-  names(init) = overexpressed_MM468_persister_genes_K27
-  names(pers) = overexpressed_MM468_persister_genes_K27
-  tab = rbind(data.frame(class = "Untreated", cell_occurence = init/sum(init), Gene=names(init)),
-              data.frame(class = "Persister", cell_occurence = pers/sum(pers), Gene=names(pers)))
-  tab$class = factor(tab$class, levels=c("Untreated","Persister"))
-  library(ggrepel)
-  position = position_jitter(width = 0.25)
-  
-  png(file.path(outdir,paste0("Cell_ocurrence_score_overpers_K4_violin.png")),
-      height=1000,width=1500,res=150)
-  ggplot(tab, aes(x=class,fill=class,y=cell_occurence,label=Gene))  + geom_violin() +
-    geom_point(position = position) +
-    geom_label_repel(position = position, size=2.5) +
-    theme_classic() + scale_fill_manual(values=c("#dfdfdfff","#118675ff")) +
-    ggpubr::stat_compare_means(method = "t.test",ref.group = "Untreated")
-  dev.off()
-  
-  tab = cbind(Gene=names(init), data.frame(cell_occurence_unt = init/sum(init)),
-              data.frame(cell_occurence_pers = pers/sum(pers)))
-
-  png(file.path(outdir,paste0("Dotplot_Cell_ocurrence_score_overpers_K4_violin.png")),
-      height=1000,width=1500,res=150)
-  ggplot(tab, aes(x=cell_occurence_unt,y=cell_occurence_pers, label=Gene))  + geom_point() +
-    geom_label_repel(size=2.5) +
-    theme_classic() 
+  print(violin_plot_cooccurence(mat_init,mat_pers,
+                          sub_cells = list(top_cells_init,top_cells_pers)))
   dev.off()
 }
 
@@ -270,11 +238,11 @@ differential_results_K4_all <- readxl::read_xlsx(file.path(
 differential_results_K4_all$ID = sub("-",":",gsub("_","-",differential_results_K4_all$ID))
 bulk_log2FC_K4 = differential_results_K4_all$log2FC.X5FU6[match(selected_regions,differential_results_K4_all$ID)]
   
-for(samp in c("MM468_DMSO1_D131_K4","MM468_DMSO6_D0_K4")){
-  mat <- mark$K4[[samp]]
-  mat = cbind(mat, mark$K4$MM468_5FU6_D60_K4)
+for(samp in c("MM468_DMSO1_day0")){
+  mat <- mark[[samp]]
+  mat = cbind(mat, mark$MM468_5FU1_day60)
   
-  mat_housekeeping <- mat[house_keeping_genes_region,]
+  mat_housekeeping <- mat[which(annot10k$ID %in% house_keeping_genes_region),]
   bin_mat = mat_housekeeping
   bin_mat[(bin_mat>0)]=1
   coocurrence_K4me3_score_housekeeping = as.data.frame(
@@ -285,10 +253,9 @@ for(samp in c("MM468_DMSO1_D131_K4","MM468_DMSO6_D0_K4")){
     coocurrence_K4me3_score_housekeeping$Coocurrence_score > 
       percent_coocurrence_to_define_top_cells)]
   
-  tmat = mat[selected_regions,top_cells]
+  tmat = mat[match(c(house_keeping_genes_region,persister_K27_regulated_regions), annot10k$ID),top_cells]
   bin_mat = tmat
   bin_mat[bin_mat>0] = 1
-  
   methHC <- c("ward","ward.D","ward.D2","single","complete","average")[3]
   hc <- hclust(as.dist(1-cor(as.matrix(bin_mat))),method=methHC)
   mat.so <- as.matrix(bin_mat)
@@ -306,106 +273,35 @@ for(samp in c("MM468_DMSO1_D131_K4","MM468_DMSO6_D0_K4")){
   
   #Create gene/region annotation data.frame
   annot_gene = data.frame(
-    region = selected_regions,
-    genes = selected_genes,
+    region = c(house_keeping_genes_region,persister_K27_regulated_regions),
+    genes = c(house_keeping_genes,persister_K27_regulated_genes),
     HouseKeeping = c(rep("HouseKeeping",length(house_keeping_genes_region)),
-                     rep("Overexpressed",length(overexpressed_MM468_persister_region_K27)),
-                     rep("Deregulated not Over.", length(not_overexpressed_but_deregulated_K27_regions))),
-    total_cells = rowSums(bin_mat),
-    bulk_log2FC_K4 = bulk_log2FC_K4,
-    bulk_log2FC_K27 = c(annot10k_housekeeping$log2FC_bulk,
-                       annot10k_K27_byGene$log2FC_bulk,
-    annot10k_K27_byGene_all$log2FC_bulk[match(not_overexpressed_but_deregulated_K27_regions,annot10k_K27_byGene_all$ID)]),
-    scRNA_persister_count = res.scRNA$logCPM.C2_pers[match(selected_genes,res.scRNA$Symbol)]
+                     rep("Persister_K27_regulated",length(persister_K27_regulated_genes)))
     )
 
   rownames(mat.so) = annot_gene$genes
   anocol_gene = geco.annotToCol4(annot_gene)
   hmColors <- colorRampPalette(c("white","royalblue"))(256)
-  anocol_gene[,"HouseKeeping"] = c(rep("grey",length(house_keeping_genes_region)),
-                                   rep(alpha("red",0.5),length(overexpressed_MM468_persister_region_K27)),
-                                   rep(alpha("blue",0.5),length(not_overexpressed_but_deregulated_K27_regions)))
-  anocol[,"sample_id"] = c(rep("#dfdfdfff",length(grep("DMSO",top_cells))),
-                              rep("#118675ff",length(grep("5FU",top_cells))))
-  
-  order_log2FC_bulk = annot_gene$bulk_log2FC_K4[(length(house_keeping_genes_region)+1):nrow(annot_gene)] 
-  order_log2FC_bulk = length(house_keeping_genes_region)+order(order_log2FC_bulk)
-  order_log2FC_bulk = c(1:(length(house_keeping_genes_region)),order_log2FC_bulk)
+  anocol[,"sample_id"] = c(rep("#afafafff",length(grep("DMSO",top_cells))),
+                              rep("#1AB8AD",length(grep("5FU",top_cells))))
 
   pdf(file.path(outdir,paste0(samp,"_cooccurrence_pers_hk_topcells_K4_heatmap_K27regulated_pers_genes_with_nonover.pdf")),
       height=12, width=12)
   geco.hclustAnnotHeatmapPlot.withColumn(
-    x=mat.so[,hc$order],
+    x=mat.so[,],
     hc=hc,
     hmColors=hmColors,
-    anocol=anocol[hc$order,-c(1)],
+    anocol=anocol[,-c(1)],
     hc_row = hc_gene,
-    anorow = anocol_gene[,-c(1,2)],
+    anorow = anocol_gene[,-c(1)],
     dendro.cex=0.01,
     xlab.cex=1,
     hmRowNames=TRUE,
     hmRowNames.cex=0.25,
     hmCategNamesRows = TRUE,
     hmCategNamesRows.cex = 0.5)
-  
-  geco.hclustAnnotHeatmapPlot.withColumn(
-    x=mat.so[hc_gene$order,hc$order],
-    hc=hc,
-    hmColors=hmColors,
-    anocol=anocol[hc$order,-c(1)],
-    hc_row = hc_gene,
-    anorow = anocol_gene[hc_gene$order,-c(1,2)],
-    dendro.cex=0.01,
-    xlab.cex=1,
-    hmRowNames=TRUE,
-    hmRowNames.cex=0.25,
-    hmCategNamesRows = TRUE,
-    hmCategNamesRows.cex = 0.5)
+
   dev.off()
     
 }
 
-# Signal K27 bulk vs Signal K27 single-cell
-bulk_K4_file <- file.path(maindir,"input","bulk_ChIPseq",
-                           "MM468_chromInd_by_index_K4_transcripts_10k.zip")
-bulk_K4 = read.csv(unzip(file.path(bulk_K4_file),exdir = tempdir()))
-
-rownames(bulk_K4) <- paste0(bulk_K4$Chromosome,":", bulk_K4$Begin,"-", bulk_K4$End)
-bulk_K4 <- bulk_K4[,-c(1:3,grep(pattern = "input",colnames(bulk_K4)))]
-bulk_K4 <- bulk_K4[,grep(pattern = "K4",colnames(bulk_K4))]
-bulk_K4 <- log2((10^9*t(t((bulk_K4+1)/width(annot10k))/colSums(bulk_K4))))
-names(mark$K4)
-colnames(bulk_K4)
-
-for(samp in c("MM468_5FU6_D60_K4")){
-  mat <- mark$K4[[samp]]
-  mat <- as.matrix(rowSums(mat))
-  mat <-  log2((10^9*t(t((mat+1)/width(annot10k))/colSums(mat))))
-  
-  for(bulk_samp in c("MM468BC_5FU_D33_D02_K4","MM468BC_5FU_D33_E02_K4","MM468BC_5FU_D33_G02_K4")){
-    subset_int = cbind(mat,bulk_K4[,bulk_samp])
-    colnames(subset_int) = c(paste0("sc_",samp),paste0("bulk_",bulk_samp))
-    subset_int = as_tibble(subset_int)
-    pdf(file.path(outdir,paste0("Log2_Count_sc_",samp,"_vs_bulk_",bulk_samp,".pdf")),height=5,width=5)
-    sp <- ggscatter(subset_int, y = paste0("sc_",samp), x = paste0("bulk_",bulk_samp),
-                    add = "reg.line",  # Add regressin line
-                    add.params = list(color = "black", fill = "lightgray")) #add size of dot function of initial expression in DMSO
-    # Add correlation coefficient
-    print(sp + stat_cor(method = "pearson",label.x=1,label.sep = "\n"))
-    dev.off()
-  }
-}
-
-bulk_ref = "MM468BC_5FU_D33_D02_K4"
-for(bulk_samp in c("MM468BC_5FU_D33_E02_K4","MM468BC_5FU_D33_G02_K4")){
-  subset_int = cbind(bulk_K4[,bulk_ref],bulk_K4[,bulk_samp])
-  colnames(subset_int) = c(paste0("sc_",samp),paste0("bulk_",bulk_samp))
-  subset_int = as_tibble(subset_int)
-  pdf(file.path(outdir,paste0("Log2_Count_bulk_",samp,"_vs_bulk_",bulk_samp,".pdf")),height=5,width=5)
-  sp <- ggscatter(subset_int, y = paste0("sc_",samp), x = paste0("bulk_",bulk_samp),
-                  add = "reg.line",  # Add regressin line
-                  add.params = list(color = "black", fill = "lightgray")) #add size of dot function of initial expression in DMSO
-  # Add correlation coefficient
-  print(sp + stat_cor(method = "pearson",label.x=1,label.sep = "\n"))
-  dev.off()
-}

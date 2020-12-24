@@ -1,3 +1,5 @@
+rm(list = ls()); gc()
+
 library(here)
 source(file.path(here(),"Scripts","functions.R"))
 source(file.path(here(),"Scripts","global_var.R"))
@@ -16,21 +18,9 @@ RDatadirSamples <- file.path(RDatadir,"RData_perSample") ; if(!file.exists(RData
 
 for(f in list.files(RDatadirSamples,full.names=TRUE)) load(f)
 
-colnames(metadata.MM468_DMSO5_day67)[1] <- "BC_10x"
-metadata.MM468_DMSO5_day67$cons_BC_lenti <- NA
-metadata.MM468_DMSO5_day67$Numi_per_base <- NA
-metadata.MM468_DMSO5_day67$Prop_match_cons <- NA
-metadata.MM468_DMSO5_day67$side <- NA
-metadata.MM468_DMSO5_day67$kept <- NA
-metadata.MM468_DMSO5_day67$in_lib <- NA
-metadata.MM468_DMSO5_day67$seq_rep1 <- NA
-metadata.MM468_DMSO5_day67$seq_rep2 <- NA
-
-
 # Combining samples -------------------------------------------------------
-
-all_annots <-grep("metadata",names(.GlobalEnv),value=TRUE)
-annot <- do.call("rbind",mget(all_annots))
+all_annots <- grep("metadata",names(.GlobalEnv),value=TRUE)
+annot <- do.call("rbind", mget(all_annots))
 rownames(annot) <- annot$cell_id
 
 all_counts <-grep("counts.",names(.GlobalEnv),value=TRUE)
@@ -41,30 +31,34 @@ for (i in 1: length(all_counts)){
 }
 Names <- unique(NAMES)
 
-
-Signal <- matrix(0,nrow = length(Names),ncol=dim(annot)[1])
-rownames(Signal) <- Names
-colnames(Signal) <- annot$cell_id
-
-
+gc()
 SAMPLES <- names(table(annot$sample_id))
 
-for( i in 1:length(SAMPLES)){
+gene_metadata <- data.frame(Symbol=Names, gene_short_name=Names, cell_cycle=NA)
+
+count_list = list()
+for(i in 1:length(SAMPLES)){
   counts.sample <- get(paste0("counts.",SAMPLES[i]))
-  Signal[rownames(counts.sample),as.vector(annot$cell_id[annot$sample_id %in% SAMPLES[i]])] <- as.matrix(counts.sample)
+  missing = setdiff(Names, rownames(counts.sample))
+  mat_missing = as(matrix(0, nrow=length(missing), ncol = ncol(counts.sample),
+                          dimnames = list(missing,colnames(counts.sample))),"dgCMatrix")
+  counts.sample. = rbind(counts.sample, mat_missing)
+  count_list[[SAMPLES[i]]] <- counts.sample.[match(Names,rownames(counts.sample.)),]
+  rm(counts.sample., counts.sample)
+  gc()
 }
 
-#if gene names start with hg19
-if(substr(Names[1],0,4)=="hg19") {
-  Names_short <- sub("hg19_","",Names)
-  gene_metadata <- data.frame(Symbol=Names_short, gene_short_name=Names_short, cell_cycle=NA)
-} else {
-  gene_metadata <- data.frame(Symbol=Names, gene_short_name=Names, cell_cycle=NA)
-  
-}
+Signal <- do.call("cbind",count_list)
+if(length(which(rowSums(Signal) == 0))>0) Signal = Signal[-which(rowSums(Signal)==0),]
+if(length(which(colSums(Signal) == 0))>0) Signal = Signal[,-which(colSums(Signal)==0)]
+gc()
 
-#gene_metadata <- data.frame(Symbol=Names, gene_short_name=Names, cell_cycle=NA)
 gene_metadata$cell_cycle <- (gene_metadata$Symbol %in% human_cell_cycle_genes$HGNC.symbol)
 rownames(gene_metadata) <- Names
 
+gene_metadata = gene_metadata[match(rownames(Signal), rownames(gene_metadata)),]
+annot = annot[match(colnames(Signal), rownames(annot)),]
+dim(Signal)
+dim(annot)
+dim(gene_metadata)
 save(annot,Signal,gene_metadata, file=file.path(RDatadir,paste0(expName,".RData")))

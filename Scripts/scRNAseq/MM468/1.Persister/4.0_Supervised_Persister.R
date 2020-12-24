@@ -2,6 +2,7 @@ library(here)
 
 maindir= here()
 resdir <- file.path(maindir,"output","scRNAseq","MM468","Persister","Supervised")
+if(!dir.exists(resdir)) dir.create(resdir)
 tabdir <- file.path(resdir,"Tables");if(!file.exists(tabdir)){dir.create(tabdir)}
 plotdir <- file.path(resdir,"Plots");if(!file.exists(plotdir)){dir.create(plotdir)}
 
@@ -23,7 +24,7 @@ metadata <- as.data.frame(annot_subset)
 ####################################################################
 ### COMPARISON SETUP  
 ####################################################################
-log2FC_thresholds <- log2(c(2,3,4))
+log2FC_thresholds <- log2(3)
 Signif_threshold <- 0.01
 
 ## Type of analysis
@@ -38,9 +39,9 @@ mygps <- list(
 'MM468_5FU6_day214'=metadata[which(metadata$sample_id %in% c("MM468_5FU6_day214") ),"cell_id"]
 )
 myrefs <- list(
-'DMSO'=metadata[which(metadata$sample_id %in% c("MM468_initial") ),"cell_id"],
-'DMSO'=metadata[which(metadata$sample_id %in% c("MM468_initial") ),"cell_id"],
-'DMSO'=metadata[which(metadata$sample_id %in% c("MM468_initial") ),"cell_id"]
+'DMSO'=metadata[which(metadata$sample_id %in% c("MM468_chemonaive") ),"cell_id"],
+'DMSO'=metadata[which(metadata$sample_id %in% c("MM468_chemonaive") ),"cell_id"],
+'DMSO'=metadata[which(metadata$sample_id %in% c("MM468_chemonaive") ),"cell_id"]
 ) # Sets reference (can be 1 or more samples)
 
 refs <- names(myrefs) 

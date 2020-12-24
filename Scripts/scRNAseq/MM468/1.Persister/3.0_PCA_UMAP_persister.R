@@ -18,14 +18,13 @@ source(file.path(maindir,"Scripts","global_var.R"))
 # PCA, UMAP and louvain clustering with Monocle 3  on all cells for the paper------------------
 ################################################################################################
 load(file.path(RDatadir,"MM468.RData"))
-load(file.path(RDatadir,"persister_gene_cell_annot.RData"))
 annot_int <- annot
 
 # Select initial population, 4 'persister' states (early) and 3 'resistant' states (late)
 sample_persisters_study = c(
-  "MM468_initial","MM468_5FU6_day33","MM468_5FU3_day50","MM468_5FU5_day67",
-  "MM468_5FU3_day77", "MM468_5FU5_day171","MM468_5FU3_day202",
-  "MM468_5FU6_day214"
+  "MM468_chemonaive","MM468_5FU1_day33","MM468_5FU3_day50","MM468_5FU2_day67",
+  "MM468_5FU3_day77", "MM468_5FU2_day171","MM468_5FU3_day202",
+  "MM468_5FU1_day214"
   )
 
 annot_int <- annot_int[annot_int$sample_id %in% sample_persisters_study & annot_int$doublet_score<10000,]
@@ -52,21 +51,19 @@ save(umap_res,file=file.path(RDatadir,"umap_persister.RData"))
 save(pca_object,file=file.path(RDatadir,"pca_persister.RData"))
 
 NormCounts <- t(t(exprs(cds)) /  pData(cds)[, 'Size_Factor'])
-persister_LogCounts <- log(NormCounts+1,2)
+LogCounts <- log(NormCounts+1,2)
 rm(NormCounts)
 gc()
-
-save(persister_LogCounts,file=file.path(RDatadir,"persister_LogCounts.RData"))
+save(LogCounts,file=file.path(RDatadir,"LogCounts.RData"))
 RawCounts = exprs(cds)
-save(RawCounts,file=file.path(RDatadir,"persister_RawCounts.RData"))
+save(RawCounts,file=file.path(RDatadir,"RawCounts.RData"))
 
 
 # ################################################################################
 # # Cell cycle scoring with Seurat  ##############################################
 # ################################################################################
-# 
-# library(Seurat)
-# 
+ 
+ 
 # # A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can
 # # segregate this list into markers of G2/M phase and markers of S phase
 s.genes <- cc.genes$s.genes
@@ -99,9 +96,7 @@ save(annot_int,gene_metadata,file=file.path(RDatadir,"persister_gene_cell_annot.
 ################################################################################################
 ###### Parameters for à façon plots of results on all cells--  #################################
 ################################################################################################
-
-load(file.path(maindir,"output","scRNAseq","MM468_PDX","common_over_genes_pers_vs_unt_log2FC1.58.RData"))
-load(file.path(RDatadir,"persister_LogCounts.RData"))
+load(file.path(RDatadir,"LogCounts.RData"))
 load(file.path(RDatadir,"persister_gene_cell_annot.RData"))
 load(file.path(RDatadir,"umap_persister.RData"))
 load(file.path(RDatadir,"pca_persister.RData"))
@@ -113,7 +108,7 @@ annotText <- "sample_id"
 hcText <- "sample_id"  ## column used in hierarchical clustering # change names from Sample_x to actual sample name
 
 ribo <- grepl("^RP[SL]",gene_metadata$Symbol)
-annot_int$rRNA <- apply(persister_LogCounts[ribo,],2,mean)
+annot_int$rRNA <- apply(LogCounts[ribo,],2,mean)
 gc()
 set.seed(7)
 anocol <- geco.unsupervised::geco.annotToCol4(
@@ -135,7 +130,8 @@ corres_cell_cycle <- data.frame(phase=c("G1","G2M","S"),color=c("#e896aaff","#55
 indice <- which(annotCol=="cell_cycle")
 anocol[,indice] <- as.character(corres_cell_cycle$color[match(annot_int$cell_cycle,corres_cell_cycle$phase)])
 
-corres_cluster <- data.frame(cluster=c("C10","C2","C3","C4","C6","C8"),color=c("#b9cced","#438a5e","#ffeadb","#ade498","#ff9c71","#ff847c"))
+corres_cluster <- data.frame(cluster=c("C10","C2","C3","C4","C6","C8"),
+                             color=c("#b9cced","#438a5e","#ffeadb","#ade498","#ff9c71","#ff847c"))
 corres_cluster$cluster <- as.character(corres_cluster$cluster)
 corres_cluster$color <- as.character(corres_cluster$color)
 indice <- which(annotCol=="louvain_partition")
@@ -143,12 +139,10 @@ anocol[,indice] <- as.character(corres_cluster$color[match(annot_int$louvain_par
 
 
 png(file.path(resdir,"Legend_sample_scRNAseq.png"), height=2000,width=1500,res=300)
-par(mfrow=c(5,2))
 barplot(rep(1,6),col=corres_sample$color, cex.names  =0.8,horiz=F,names.arg=corres_sample$PDX,las=2)
 dev.off()
 
 png(file.path(resdir,"Legend_cluster_scRNAseq.png"), height=2000,width=1500,res=300)
-par(mfrow=c(5,2))
 barplot(rep(1,5),col=corres_cluster$color, cex.names  =0.8,horiz=F,
         names.arg=c("C1","C2","C3","C4","C5"),las=2)
 dev.off()
@@ -191,19 +185,19 @@ if(length(indice) >0 ){
   
   png(file.path(resdir_UMAP,paste0("exp3_UMAP_",colnames(anocol)[indice],".png")), height=1150,width=950,res=350) 
   indice <- which(annotCol=="cons_BC_lenti")
-  plot((umap_res[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_initial","MM468_5FU3_day50","MM468_5FU3_day77","MM468_5FU3_day202"),]), col=alpha(anocol[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_initial","MM468_5FU3_day50","MM468_5FU3_day77","MM468_5FU3_day202"),indice],0.8),pch=20,cex=0.4,main=paste0(colnames(anocol)[indice]," perplexity=30"),
+  plot((umap_res[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU3_day50","MM468_5FU3_day77","MM468_5FU3_day202"),]), col=alpha(anocol[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU3_day50","MM468_5FU3_day77","MM468_5FU3_day202"),indice],0.8),pch=20,cex=0.4,main=paste0(colnames(anocol)[indice]," perplexity=30"),
        xlab="component 1",ylab="component 2",ylim=c(min(umap_res[,2]),max(umap_res[,2])), xlim=c(min(umap_res[,1]),max(umap_res[,1])))
   dev.off()
   
   png(file.path(resdir_UMAP,paste0("exp5_UMAP_",colnames(anocol)[indice],".png")), height=1150,width=950,res=350) 
   indice <- which(annotCol=="cons_BC_lenti")
-  plot((umap_res[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_initial","MM468_5FU5_day67","MM468_5FU5_day171"),]), col=alpha(anocol[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_initial","MM468_5FU5_day67","MM468_5FU5_day171"),indice],0.8),pch=20,cex=0.4,main=paste0(colnames(anocol)[indice]," perplexity=30"),
+  plot((umap_res[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU5_day67","MM468_5FU5_day171"),]), col=alpha(anocol[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU5_day67","MM468_5FU5_day171"),indice],0.8),pch=20,cex=0.4,main=paste0(colnames(anocol)[indice]," perplexity=30"),
        xlab="component 1",ylab="component 2",ylim=c(min(umap_res[,2]),max(umap_res[,2])), xlim=c(min(umap_res[,1]),max(umap_res[,1])))
   dev.off()
   
   png(file.path(resdir_UMAP,paste0("exp6_UMAP_",colnames(anocol)[indice],".png")), height=1150,width=950,res=350) 
   indice <- which(annotCol=="cons_BC_lenti")
-  plot((umap_res[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_initial","MM468_5FU6_day33","MM468_5FU6_day214"),]), col=alpha(anocol[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_initial","MM468_5FU6_day33","MM468_5FU6_day214"),indice],0.8),pch=20,cex=0.4,main=paste0(colnames(anocol)[indice]," perplexity=30"),
+  plot((umap_res[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU6_day33","MM468_5FU6_day214"),]), col=alpha(anocol[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU6_day33","MM468_5FU6_day214"),indice],0.8),pch=20,cex=0.4,main=paste0(colnames(anocol)[indice]," perplexity=30"),
        xlab="component 1",ylab="component 2",ylim=c(min(umap_res[,2]),max(umap_res[,2])), xlim=c(min(umap_res[,1]),max(umap_res[,1])))
   dev.off()
   
@@ -271,13 +265,13 @@ geco.hclustAnnotHeatmapPlot(x=cor(mat.so.cor),
 )
 dev.off()
 
-subset_LogCounts <- persister_LogCounts[,annot_subset$cell_id]
+subset_LogCounts <- LogCounts[,annot_subset$cell_id]
 save(subset_LogCounts,hc_PCA,anocol_subset,annot_subset,gene_metadata,file=file.path(RDatadir,"subset_analysis.RData"))
 
 #Plot repartition of Expression groups with time
 corres_day <- data.frame(Sample=sample_persisters_study,
                           day=gsub(".*day","",sample_persisters_study))
-corres_day[which(corres_day$Sample=="MM468_initial"),"day"] = 0
+corres_day[which(corres_day$Sample=="MM468_chemonaive"),"day"] = 0
 corres_day$day = as.numeric(corres_day$day)
 annot_subset$day <- as.integer(corres_day$day[match(annot_subset$sample_id,corres_sample$Sample)])
 

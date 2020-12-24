@@ -28,13 +28,12 @@ for(file in list.files(file.path(datadir,"Raw_Counts","K27"),pattern = "*.count$
 }
 
 metadata_K27 = data.frame(sample_id = c(
-    "MM468_DMSO6_day60", "MM468_DMSO3_day77", "MM468_DMSO1_day131",
-    "MM468_5FU6_day33", "MM468_5FU5_day67", "MM468_GSKJ4_day91","MM468_GSKJ4_5FU3_day91",
-    "MM468_5FU4_day131", "MM468_5FU3_day147", "MM468_5FU5_day171"),
+    "MM468_DMSO1_day60", "MM468_DMSO3_day77", "MM468_DMSO5_day131",
+    "MM468_5FU1_day33", "MM468_5FU2_day67",
+    "MM468_5FU6_day131", "MM468_5FU3_day147", "MM468_5FU2_day171"),
     sample_id_color = c("#dfdfdfff", "#999999ff","#363636",
-                        "#118675ff", "#55D42F","#8E3899", "#E676FA",
-                        "#ffea2eff", "#ff9800ff", "#ff5722ff"))
-
+                        "#118675ff", "#8cc453ff",
+                        "#ff5722ff", "#feb40fff", "#fd8508ff"))
 # Calculate FrIP per cell for MM468
 annot_raw$in_peak = Matrix::colSums(datamatrix)
 
@@ -61,23 +60,20 @@ ggplot(annot_raw) + geom_violin(aes(y=FRiP, x=sample_id,fill=sample_id)) +
     scale_fill_manual(values = metadata_K27$sample_id_color)
 dev.off()
 
-png(file.path(plotdir_qc, "FRiP_violin_K27_wo_GSKJ4.png"),height=1500,width=1500,res=300)
-ggplot(annot_raw %>% filter(!sample_id %in% c("MM468_GSKJ4_day91","MM468_GSKJ4_5FU3_day91") )) + geom_violin(aes(y=FRiP, x=sample_id,fill=sample_id)) +
-    theme_classic() + theme(text = element_blank()) + ylim(c(0,1)) +
-    scale_fill_manual(values = metadata_K27$sample_id_color[-c(6,7)])
-dev.off()
-
 # UMAP
 annot = as.data.frame(colData(scExp_cf))
 umap_res = as.data.frame(reducedDim(scExp_cf,"UMAP"))
 annot$FrIP = annot_raw$FRiP[match(annot$cell_id, annot_raw$cell_id)]
+annot = annot[-which(is.infinite(annot$FrIP)),]
 anocol = geco.unsupervised::geco.annotToCol4(annot[,c("total_counts","FrIP","sample_id")],
                                              annot[,c("total_counts","FrIP","sample_id")],
-                                             categCol = NULL,
                                              plotLegend = T,
-                                             plotLegendFile = file.path(plotdir_qc,"legend_FRiP.pdf"))
+                                             plotLegendFile = file.path(plotdir_qc,"legend_FRiP.pdf"),
+                                             scale_q = "inferno")
 
-png(file.path(plotdir_qc,"UMAP_FRiP_K27_wo_GSJK.png"), height=1350,width=1200,res=300)
+png(file.path(plotdir_qc,"UMAP_FRiP_K27.png"), height=1350,width=1200,res=300)
 plot(umap_res[,c(1,2)], col=alpha(anocol[,"FrIP"],0.3),pch=20, cex=0.6,main=paste0("UMAP FRiP MM468"))
 dev.off()
+
+
 

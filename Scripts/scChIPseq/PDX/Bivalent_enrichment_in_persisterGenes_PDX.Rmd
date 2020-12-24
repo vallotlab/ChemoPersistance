@@ -20,7 +20,6 @@ dataDir <- file.path(maindir,"input","bulk_ChIPseq","PDX")
 annotDir <- file.path(maindir,"annotation")
 resdir <- file.path(maindir,"output","scChIPseq","PDX","Bivalence")
 if(!dir.exists(resdir)) dir.create(resdir)
-
 ```
 
 
@@ -76,11 +75,11 @@ View(Bivalent_pathways %>% filter(Class %in% c("c2_curated","C5_GO","hallmark"))
 ```{r, echo=FALSE}
 # Count matrice
 dataDir_sc = file.path(maindir,"input","scChIPseq","PDX","Count_Matrices")
-resultZ_K4 <- read.csv( unzip(zipfile = file.path(dataDir_sc,"HBCx95_m43_UNT_K4_10k_1000.zip"),exdir = tempdir()),sep="\t")
+resultZ_K4 <- read.csv( gzfile(file.path(dataDir_sc,"HBCx95_m43_UNT_H3K4me3_TSS.tsv.gz")),sep="\t")
 RZ_K4 <- rowSums(resultZ_K4[,-1])  #RZ matrix is the raw count matrix
 RZ_RPKM_K4 <- (10^9*t(t((RZ_K4+1)/10001/sum(RZ_K4))))
 
-resultZ_K27 <- read.csv(file.path(dataDir_sc,"HBCx95_UNT_K27_10k_1000","HBCx95_m43_UNT.tsv"),sep="\t")
+resultZ_K27 <- read.csv(gzfile(file.path(dataDir_sc,"HBCx95_m43_UNT_H3K27me3_TSS.tsv.gz")),sep="\t")
 RZ_K27 <- rowSums(resultZ_K27[,-1]) #RZ matrix is the raw count matrix
 RZ_RPKM_K27 <- (10^9*t(t((RZ_K27+1)/10001/sum(RZ_K27))))
 
@@ -103,7 +102,7 @@ scatter <- ggplot(K27_K4_df,aes(K27, K4)) + geom_point(alpha=0.65) + ggrepel::ge
     data = K27_K4_df %>% filter(ID %in% top_biv_IDs), # Filter data first
     aes(label=Gene) 
   ) + theme_classic()
-gridExtra::grid.arrange(hist_bottom, empty, scatter, hist_left, ncol=2, nrow=2, widths=c(4, 1), heights=c(1, 4))
+(gridExtra::grid.arrange(hist_bottom, empty, scatter, hist_left, ncol=2, nrow=2, widths=c(4, 1), heights=c(1, 4)))
 dev.off()
 
 png(file.path(resdir,"Biplot_log2_K27_K4_10k_smooth.png"),height = 1200, width = 1200, res = 150)
