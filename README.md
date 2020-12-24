@@ -55,6 +55,7 @@ before running the script '*5.0_ComparisonChIPseq.R*'.
 
 
 ## 2.0 scChIP
-
+Run the scripts of H3K27me3 and H3K4me3 in any order.
 
 ## 3.0 bulk ChIPseq
+These scripts are mainly to produce snapshots of specific genes from the bigwigs.
