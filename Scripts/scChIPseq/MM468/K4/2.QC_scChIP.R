@@ -15,14 +15,8 @@ plotdir_qc = file.path(plotdir, "QC"); if(!dir.exists(plotdir_qc)) dir.create(pl
 ChromSCape_analyses = file.path(maindir, "output", "scChIPseq","ChromSCape_analyses")
 ChromSCape_directory = file.path(ChromSCape_analyses,dataset_name)
 
-# Load data K4 - PEAKS
-tmp = tempdir()
-unzip(file.path(datadir,"Count_Matrices", "MM468_K4_peaks_1000.zip"),
-      exdir = tmp)
-list.files(tmp,pattern = ".*.tsv")
 # Reading in matrices
-out <- import_scExp(c(file.path(tmp,"MM468_DMSO6_D0_K4.tsv"),
-                      file.path(tmp,"MM468_5FU6_D60_K4.tsv")))
+out <- import_scExp_gz(file.path(datadir,"Count_Matrices"),pattern = "_H3K4me3_TSS.tsv.gz")
 
 # Save raw
 datamatrix = out$datamatrix
@@ -31,19 +25,21 @@ load(file.path(ChromSCape_directory,"Filtering_Normalize_Reduce","MM468_H3K4me3_
 
 distribution = list()
 for(file in list.files(file.path(datadir,"Raw_Counts","K4"),pattern = "*.count$")) {
-    samp = gsub(".count","",file)
+    samp = gsub("_H3K4me3.count","",file)
     distribution[[samp]] = read.csv(file.path(datadir,"Raw_Counts","K4",file),header=F,sep = " ",col.names = c("barcode","reads_total"))
     distribution[[samp]]$sample_id = rep(samp,nrow(distribution[[samp]]))
 }
 
 metadata = data.frame(sample_id = c(
-    "MM468_DMSO6_D0_K4", "MM468_5FU6_D60_K4"),
-    sample_id_color = c("#dfdfdfff", "#118675ff"))
+  "MM468_DMSO1_day0", "MM468_5FU1_day60"),
+  sample_id_color = c("#afafafff", "#1AB8AD"))
+
 
 # Calculate FrIP per cell for MM468
 annot_raw$in_peak = Matrix::colSums(datamatrix)
 
 annot_raw$total_reads = 0
+annot_raw$sample_id = annot_raw$sample_id
 
 for(i in names(distribution)){
     annot_raw$total_reads[which(annot_raw$sample_id == i)] = 

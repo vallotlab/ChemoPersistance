@@ -8,8 +8,9 @@ dataset_name = "MM468_H3K4me3_10k_TSS"
 ref_genome ="hg38"
 
 metadata = data.frame(sample_id = c(
-    "MM468_DMSO6_D0_K4", "MM468_5FU6_D60_K4"),
-    sample_id_color = c("#afafafff", "#1AB8AD"))# "#009688ff"))
+  "MM468_DMSO1_day0", "MM468_5FU1_day60"),
+  sample_id_color = c("#afafafff", "#1AB8AD"))
+
 
 datadir = file.path(maindir, "input", "scChIPseq", "MM468")
 outdir = file.path(maindir, "output", "scChIPseq", "MM468",dataset_name)
@@ -193,103 +194,15 @@ plot_reduced_dim_scExp_devel(scExp_cf,"cell_cluster","UMAP",downsample = 5000, t
     theme(legend.position = "None", text = element_blank())
 dev.off()
 
-
-############################
-## Intra Correlation      ##
-############################
-
-#Table association
-num_cell_in_cluster_scExp(scExp_cf)
-
-# Plot contingency bar graph - scChIP seq
-annot = SingleCellExperiment::colData(scExp_cf)
-
-annot = as_tibble(annot) %>% group_by(sample_id,sample_id_color,cell_cluster,cell_cluster_color) %>%
-    summarise(count=n())
-
-annot = left_join(annot,
-                  annot %>% ungroup %>% group_by(sample_id) %>% summarise(sum = sum(count)),
-                  by ="sample_id")
-annot = annot %>% mutate(freq = count/sum)
-
-
-annot = annot %>% mutate(sample_id=factor(sample_id,levels=metadata$sample_id)) 
-
-png(file.path(plotdir_unsup,"Heatmaps", "Contingency_sample_cluster_bargraph.png"),width=800,height=1500,res=300)
-ggplot(annot) + geom_bar(aes(y=freq,x=sample_id,fill=cell_cluster), stat="identity") +
-    scale_fill_manual(values=unique(scExp_cf$cell_cluster_color)) +
-    theme_classic() + 
-    theme(axis.text.x = element_text(angle = 90)) 
-dev.off()
-
-png(file.path(plotdir_unsup,"Heatmaps", "Contingency_sample_cluster_bargraph_wolabel.png"),width=1500,height=1500,res=300)
-ggplot(annot) + geom_bar(aes(y=freq,x=sample_id,fill=cell_cluster), stat="identity") +
-    scale_fill_manual(values=unique(scExp_cf$cell_cluster_color)) +
-    theme_classic() + 
-   theme(text = element_blank()) 
-dev.off()
-
-
-## Intra-correlation score 
-mati = t(reducedDim(scExp_cf,"PCA"))
-cor_mat <- cor(mati)
-hc_PCA <- hclust(as.dist(1 - cor_mat), method = "ward.D"); gc()
-annot = scExp_cf@colData
-
-intra_corr=data.frame()
-for(i in unique(annot$cell_cluster)){
-    cells = as.character(annot$cell_id[which(annot$cell_cluster==i)])
-    tmp = cor_mat[cells,cells]
-    tab = data.frame("cluster" = rep(i,ncol(tmp)), "intra_corr" = colMeans(tmp))
-    intra_corr=rbind(intra_corr,tab)
-}
-
-mat.so.cor <- mati[,hc_PCA$order]
-size_group <- as.numeric(table(annot$cell_cluster))
-IntraCorr_test <- data.frame(expressionGroup=color_df$cell_cluster,pvalue=0)
-
-samp = data.frame()
-for(i in paste0("C",1:nclust)) {
-    samp = rbind(samp,intra_corr[sample(which(intra_corr$cluster==i),500,replace = T),])
-}
-
-png(file.path(plotdir_unsup,"Heatmaps","ExpressionGroup_intracorrelation_violin.png"),height=1000,width=1000,res=300)
-ggplot(samp,aes(x=cluster,y=intra_corr, fill=cluster)) + 
-    geom_violin(alpha=0.8) + theme_classic() + scale_fill_manual(values=unique(scExp_cf$cell_cluster_color)) +
-    stat_summary(fun=median, geom="point", size=2, color="black")
-dev.off()
-
-# By sample
-annot = SingleCellExperiment::colData(scExp_cf)
-intra_corr=data.frame()
-for(i in unique(annot$sample_id)){
-    cells = as.character(annot$cell_id[which(annot$sample_id==i)])
-    tmp = cor_mat[cells,cells]
-    tab = data.frame("sample_id" = rep(i,ncol(tmp)), "intra_corr" = colMeans(tmp))
-    intra_corr=rbind(intra_corr,tab)
-}
-
-mat.so.cor <- mati[,hc_PCA$order]
-
-samp = data.frame()
-for(i in unique(annot$sample_id)) {
-    samp = rbind(samp,intra_corr[sample(which(intra_corr$sample_id==i),151,replace = T),])
-}
-png(file.path(plotdir_unsup,"Heatmaps", "Sample_id_intracorrelation_violin.png"),
-    height=1000,width=1000,res=300)
-ggplot(samp,aes(x=sample_id, y=intra_corr, fill=sample_id)) + 
-    geom_violin(alpha=0.8) + theme_classic() +
-    scale_fill_manual(values= unique(annot$sample_id_color)) +
-    stat_summary(fun=median, geom="point", size=2, color="black") + theme(axis.text.x = element_text(angle=90))
-dev.off()
-
+# Differential analysis
 qval.th = 0.1
 logFC.th = 1
 enrichment_qval = 0.1
+
 # Supervised
 scExp_Pers_vs_DMSO = scExp_cf
-scExp_Pers_vs_DMSO$cell_cluster[which(scExp_Pers_vs_DMSO$sample_id == "MM468_5FU6_D60_K4")] = "C2"
-scExp_Pers_vs_DMSO$cell_cluster[which(scExp_Pers_vs_DMSO$sample_id != "MM468_5FU6_D60_K4")] = "C1"
+scExp_Pers_vs_DMSO$cell_cluster[which(scExp_Pers_vs_DMSO$sample_id == "MM468_5FU1_day60")] = "C2"
+scExp_Pers_vs_DMSO$cell_cluster[which(scExp_Pers_vs_DMSO$sample_id != "MM468_5FU1_day60")] = "C1"
 de_type  = "one_vs_rest"
 scExp_Pers_vs_DMSO = differential_analysis_scExp(scExp_Pers_vs_DMSO,de_type = de_type)
 
@@ -311,7 +224,6 @@ annot_10k = read.table(gzfile(file.path(maindir,"annotation",
                                         "gencode.v34.annotation.transcriptTSS_10k.bed.gz")),
                        sep="\t", header = F)
 colnames(annot_10k) = c("chr","start","end","transcripts","gene","strand")
-length(intersect())
 
 diff_Pers_vs_DMSO$gene = 
   annot_10k$gene[match(rownames(diff_Pers_vs_DMSO),paste0(annot_10k$chr,"_",annot_10k$start,"_",annot_10k$end))]
@@ -334,3 +246,15 @@ WriteXLS(c("over_res","under_res","diff_Pers_vs_DMSO"),
          col.names = TRUE, AdjWidth = T, AutoFilter = TRUE,
          BoldHeaderRow = TRUE, na = "", FreezeRow = 1, FreezeCol = 1)
 
+Overexpressed = GSA_Pers_vs_DMSO$Overexpressed[[2]]
+Underexpressed = GSA_Pers_vs_DMSO$Underexpressed[[2]]
+
+WriteXLS(
+  c("Overexpressed", "Underexpressed"),
+  ExcelFileName = file.path(ChromSCape_directory, "Diff_Analysis_Gene_Sets",
+                            paste0("Enrichment_test_Pers_vs_DMSO_logFC",
+                                   round(logFC.th,2),"_TSS.xlsx")), 
+  SheetNames = c( paste0("Overexp_in_Pers"), paste0("Underexp_in_Pers") ),
+  perl = "perl", verbose = FALSE, row.names = FALSE, col.names = TRUE,
+  AdjWidth = TRUE, AutoFilter = TRUE, BoldHeaderRow = TRUE, na = "",
+  FreezeRow = 1, FreezeCol = 1)

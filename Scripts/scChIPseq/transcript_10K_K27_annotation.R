@@ -9,7 +9,7 @@ annot_transcript_10k = read.table(gzfile(file.path(annotDir, "gencode.v34.annota
 colnames(annot_transcript_10k) <- c("chr","start","end","transcripts","gene","strand")
 annot_transcript_10k = as(annot_transcript_10k,"GRanges")
 
-# Take gtf gencode v32 as "TSS" annotation : take only 1bp of TSS
+# Take gtf gencode v34 as "TSS" annotation : take only 1bp of TSS
 annot_transcript_TSS = read.table(gzfile(file.path(maindir,"annotation","gencode.v34.annotation_raw.bed.gz")), sep="\t")
 colnames(annot_transcript_TSS) = c("chr","start","end","transcripts","gene","strand")
 annot_transcript_TSS = as(annot_transcript_TSS,"GRanges")

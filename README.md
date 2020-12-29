@@ -59,3 +59,10 @@ Run the scripts of H3K27me3 and H3K4me3 in any order.
 
 ## 3.0 bulk ChIPseq
 These scripts are mainly to produce snapshots of specific genes from the bigwigs.
+
+
+## Additional Files:
+
+- input/bulk_ChIPseq/MM468/chromatin_indexing_qc.csv -> ratios of Chromatin Indexing IP / input
+- input/scChIPseq/MM468/Raw_Counts/ -> raw counts used to calculate FrIP for scChIP
+- input/scChIPseq/MM468/BigWigs/ clusters C2 / C3 / C4 to produce Extened Figure 5h  

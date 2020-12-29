@@ -357,10 +357,13 @@ dev.off()
 inter_corr = data.frame()
 for(i in unique(annot$cell_cluster)){
     cells_i = as.character(annot$cell_id[which(annot$cell_cluster==i)])
+    samples_i = as.character(annot$sample_id[match(cells_i,annot$cell_id)])
     for(j in unique(annot$cell_cluster)){
             cells_j = as.character(annot$cell_id[which(annot$cell_cluster==j)])
             tmp = cor_mat[cells_i,cells_j]
-            tab = data.frame("cluster_i" = rep(i,nrow(tmp)),
+            tab = data.frame("cells_i" = cells_i,
+                             "sample_i" = samples_i,
+                             "cluster_i" = rep(i,nrow(tmp)),
                              "cluster_j" = rep(j,nrow(tmp)),
                              "inter_corr" = rowMeans(tmp))
             inter_corr=rbind(inter_corr,tab)
@@ -376,6 +379,9 @@ inter_corr = inter_corr %>% dplyr::mutate(association = factor(paste0(cluster_i,
 
 table(inter_corr$association)
 inter_corr %>% group_by(association) %>% filter(inter_corr > 0.2) %>% summarise(n())
+correlated_samp = (inter_corr %>% filter(association == "C2_C1" & inter_corr > 0.2))$sample_i
+
+table(correlated_samp)
 
 my_comparisons <- list(c("C4_C1", "C2_C1"),c("C2_C1", "C1_C1") )
 png(file.path(plotdir_unsup,"Heatmaps", "Clusters_intercorrelation_violin.png"),

@@ -9,7 +9,6 @@ resDir <- file.path(maindir,"output","bulk_ChIPseq","Snapshots")
 load(file.path(maindir,"annotation","Gencode_hg38_v25.RData"))
 
 print(list.files(inputDir_bulk))
-print(list.files(inputDir_bulk))
 
 ###Load data#########
 normalizing_ratios = read.csv(input_ratios)
@@ -183,7 +182,6 @@ input_ratios <- file.path(maindir,"output","bulk_ChIPseq","MM468","ChromatinInde
 resDir <- file.path(maindir,"output","bulk_ChIPseq","Snapshots")
 load(file.path(maindir,"annotation","Gencode_hg38_v25.RData"))
 
-print(list.files(inputDir_bulk))
 print(list.files(inputDir_bulk))
 
 ###Load data#########

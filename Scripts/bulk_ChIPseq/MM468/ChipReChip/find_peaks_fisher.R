@@ -12,13 +12,13 @@ outputDir = file.path(maindir, "output","bulk_ChIPseq","MM468","ChIPreChIP")
 # K27 K4 files
 primary_K27 = file.path(inputDir,"MM468bc_hu_dilution_primaryK27_K4_m10y20_H3K27me3.hg38.sorted.dedup.bam")
 chipReChip_K27_K4 = file.path(inputDir,"MM468bc_hu_dilution_m10y20_H3K27me3_H3K4me3.hg38.sorted.dedup.bam")
-summits_K27_K4 = rtracklayer::import(file.path(inputDir,"summits_merged_filtered_by_TSS_and_K27.bed"))
+summits_K27_K4 = rtracklayer::import(file.path(inputDir,"H3K27me3_H3K4me3_summits_merged_filtered_by_TSS_and_K27.bed"))
 summits_K27_K4 = unique(summits_K27_K4)
 
 # K27 IgG files
 primary_K27_IgG = file.path(inputDir,"MM468bc_hu_dilution_primaryK27_IgG_m10y20_H3K27me3.hg38.sorted.dedup.bam")
 chipReChip_K27_IgG= file.path(inputDir,"MM468bc_hu_dilution_m10y20_H3K27me3_IgG.hg38.sorted.dedup.bam")
-summits_K27_IgG = rtracklayer::import(file.path(inputDir,"IgG_summits_merged_filtered_by_TSS_and_K27.bed"))
+summits_K27_IgG = rtracklayer::import(file.path(inputDir,"H3K27me3_IgG_summits_merged_filtered_by_TSS_and_K27.bed"))
 summits_K27_IgG = unique(summits_K27_IgG)
 
 cat("Raw False positive rate is expected to be around ",round(length(summits_K27_IgG)/length(summits_K27_K4),3), ".\n")
