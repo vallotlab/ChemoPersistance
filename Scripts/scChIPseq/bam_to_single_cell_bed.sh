@@ -9,12 +9,12 @@
 # Generates single-cell BED files (one entry per read) from barcode-tagged BAM file (XB tag)
 # Only generate bed for cells with > {count} reads (recommended 1000)
 # Creates a directory with the single cell files 
-# Sorting can be memory intensive, should run on a HPC if possible (~8 threads / ~40gb RAM)
+# Increase number of threads for faster conversion (~6 threads ~ 8min/gb for th.=1000 reads) 
 # Require samtools 1.3
 # Usage :
 # bam_to_sc_bed {BAM} ${minimum read per cell} {path to output dir} {path to log dir} {number of threads} 
 # Exemple:
-# bam_to_sc_bed sample.bam 1000 ~/path/to/output 8
+# bam_to_sc_bed MM468_DMSO3_day77.bam 1000 ./ 6
 bam_to_sc_bed() {
   bam_in=$1
   count=$2
@@ -27,11 +27,13 @@ bam_to_sc_bed() {
   echo
   
   mkdir -p ${odir}
-  for i in $(echo $2 | sed 's/,/ /g'); do mkdir -p ${odir}/scBed_$i/ ; done
+  mkdir -p ${odir}/scBed_${count}
   
   #Get barcode field & read length
   barcode_field=$(samtools view $bam_in  | sed -n "1 s/XB.*//p" | sed 's/[^\t]//g' | wc -c)
 
+  echo -e "Sorting BAM by barcode  ..."
+  echo
   #Create header
   samtools view -H $bam_in | sed '/^@HD/ d' > ${prefix}_tmp_header.sam
     
@@ -40,7 +42,9 @@ bam_to_sc_bed() {
     
   samtools view -@ ${NB_PROC} -b ${prefix}_tmp_header.sam > ${prefix}_tmp.sorted.bam
   
-  #Convert to bedgraph: Input must be sorted by barcode, chr, position R1
+  echo -e "Create single-cell bed for each cell with > $count reads ..."
+  echo
+  #Convert to scBed
   samtools view ${prefix}_tmp.sorted.bam | awk -v odir=${odir}/scBed -v bc_field=$barcode_field -v OFS="\t" -v count=$count '
   BEGIN{
     split(count,min_counts,",")
@@ -75,11 +79,14 @@ bam_to_sc_bed() {
 '
 
   #Gzip
-  if [ -f $odir/scBed*/*.bed ];then
-  	for i in $odir/scBed*/*.bed; do gzip -9 $i; done
-  fi
+  echo -e "Gzipping single cell BED files ..."
+  echo
+  for i in $odir/scBed_${count}/*.bed; do gzip -9 $i; done
+  mv $odir/scBed_${count} ${prefix}_scBed_${count}
   
   rm -f ${prefix}_tmp_header.sam ${prefix}_tmp.sorted.bam
-
+ 
+  echo -e "Done !"
+  echo
 }
 
