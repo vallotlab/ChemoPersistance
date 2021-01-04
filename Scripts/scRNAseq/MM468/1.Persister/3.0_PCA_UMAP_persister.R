@@ -94,7 +94,7 @@ annot_int$cell_cycle <- marrow$Phase[match(annot_int$cell_id,annot_seurat$cell_i
 save(annot_int,gene_metadata,file=file.path(RDatadir,"persister_gene_cell_annot.RData"))
 
 ################################################################################################
-###### Parameters for à façon plots of results on all cells--  #################################
+###### Coloring and annotations  #################################
 ################################################################################################
 load(file.path(RDatadir,"LogCounts.RData"))
 load(file.path(RDatadir,"persister_gene_cell_annot.RData"))
@@ -237,7 +237,6 @@ if(length(indice) >0 ){
 ################################################################################################################
 # Hierarchical clustering to group samples in complement to Louvain clustering on a subset of cells ############
 ################################################################################################################
-#take a subset, do ONCE
 anocol <- as.data.frame(anocol)
 rownames(anocol) <- annot_int$cell_id
 
@@ -267,6 +266,19 @@ dev.off()
 
 subset_LogCounts <- LogCounts[,annot_subset$cell_id]
 save(subset_LogCounts,hc_PCA,anocol_subset,annot_subset,gene_metadata,file=file.path(RDatadir,"subset_analysis.RData"))
+
+##############################################################################################
+############################### Consensus Hierarchical Clustering  ###########################
+##############################################################################################
+load(file.path(RDatadir,"subset_analysis.RData"))
+maxKCC <- 6
+repsCC <- 50
+consclust <- ConsensusClusterPlus(
+  mati, maxK=maxKCC,plot="png",reps=repsCC, pItem=pItemCC,
+  pFeature=pFeatureCC, title=file.path(resdir_heatmaps,"Consensus_clustering"),
+  clusterAlg="hc", distance=distCC, innerLinkage=innerLinkageCC, finalLinkage=finalLinkageCC,seed=3.14)
+save(consclust,file=file.path(RDatadir,"Consensus_clustering.RData"))
+#---------------------------------------------------------------------------------
 
 #Plot repartition of Expression groups with time
 corres_day <- data.frame(Sample=sample_persisters_study,

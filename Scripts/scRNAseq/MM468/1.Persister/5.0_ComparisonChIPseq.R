@@ -29,7 +29,7 @@ sc_bulk_ChIP_DA = readxl::read_xlsx(file.path(maindir,"output","scChIPseq","Chro
 
 sc_bulk_ChIP_DA = sc_bulk_ChIP_DA %>% group_by(Gene) %>% slice_max(abs(log2FC.Persister))
 
-log2FC_thresholds <- log2(c(2,3,4))
+log2FC_thresholds <- log2(3)
 
 res.scRNA$log2FC_ChIP <- sc_bulk_ChIP_DA$log2FC.Persister[match(res.scRNA$Symbol,sc_bulk_ChIP_DA$Gene)]
 res.scRNA$qval_K27 <- sc_bulk_ChIP_DA$qval.Persister[match(res.scRNA$Symbol,sc_bulk_ChIP_DA$Gene)]
@@ -73,3 +73,6 @@ pie(as.numeric(vec), labels = paste0(names(vec)," ; ",as.numeric(vec)),
     col = c("#999999ff","#D1CE68FD","#67CF85", "#33BD5A", "#00A64B"),
     cex=0.5)
 dev.off()
+
+
+
