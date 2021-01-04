@@ -58,7 +58,7 @@ g2m.genes <- cc.genes$g2m.genes
 rownames(Signal) <- gene_metadata$Symbol
 annot_sel <- annot[annot$kit %in% c("v3"),]
 
-marrow <- CreateSeuratObject(counts = Signal[,annot_sel$cell_id])
+marrow <- CreateSeuratObject(counts = Signal[,which(colnames(Signal) %in% annot_sel$cell_id)])
 marrow <- NormalizeData(marrow)
 marrow <- FindVariableFeatures(marrow, selection.method = "vst")
 marrow <- ScaleData(marrow, features = rownames(marrow))
@@ -207,7 +207,7 @@ load(file.path(RDatadir,"umap.RData"))
 
 for(j in 1:ncol(anocol))
     {
-    png(file.path(resSUBdir_UMAP,paste0("UMAP_",colnames(anocol)[j],".png")), height=1350,width=1200,res=300)
+    # png(file.path(resSUBdir_UMAP,paste0("UMAP_",colnames(anocol)[j],".png")), height=1350,width=1200,res=300)
   if(class(annot_int[1,colnames(anocol)[j]])=="numeric"){
     plot((umap_res), col=alpha(anocol[,j],0.3),pch=20,cex=0.6,
          main=paste0(colnames(anocol)[j]," min=",round(min(annot_int[,colnames(anocol)[j]]),digits=3)," max=",round(max(annot_int[,colnames(anocol)[j]]),digits=3)),
@@ -224,7 +224,7 @@ for(j in 1:ncol(anocol))
          }
   
   
-    dev.off()
+    # dev.off()
     }
 
 # Subsample plot
