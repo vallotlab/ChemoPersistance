@@ -30,10 +30,12 @@ RDatadir <- file.path(resSUBdir,"RData") ; if(!file.exists(RDatadir)){dir.create
 
 ```{r loads}
 load(file.path(RDatadir,"PDX.RData"))
-load(file.path(RDatadir,"pca.RData")) #if starting from prior analysis
-load(file.path(RDatadir,"annot_anocol_final.RData"))#if starting from prior analysis
-load(file.path(RDatadir,"umap.RData"))#if starting from prior analysis
 annotationDatabases <- c("MSigDB") # "KEGG" or "GO" or "KEGG_GO" or "MSigDB"
+
+sel = (annot$sample_id != "HBCx95_responder" )
+annot = annot[sel,]
+Signal = Signal[,sel]
+
 ```
 
 We can start from already performed analysis to make figures.
@@ -87,40 +89,39 @@ rm(marrow); gc()
 
 ```{r, echo=FALSE}
 
-if(!(file.exists(file.path(RDatadir,"NormCounts.RData")) & file.exists(file.path(RDatadir,"LogCounts.RData")))){
-    rownames(Signal) <- gene_metadata$Symbol
-    rownames(annot_int) <- annot_int$cell_id
-    rownames(gene_metadata) <- gene_metadata$Symbol
-    cds <- new_cell_data_set(Signal[,rownames(annot_int)],
-                             cell_metadata = annot_int,
-                             gene_metadata  = gene_metadata)
-    rm(Signal);gc()
-    cds <- preprocess_cds(cds,method='PCA', norm_method='size_only',num_dim=50)
-    
-    cds <- reduce_dimension(cds, reduction_method = 'UMAP')
-    cds <-  cluster_cells(cds)
-    
-    annot_int$louvain_cluster <- cds@clusters[[1]]$clusters
-    annot_int$louvain_cluster <- paste0("C",annot_int$louvain_cluster)
-    
-    annot_int$louvain_partition <- cds@clusters[[1]]$partition
-    annot_int$louvain_partition <- paste0("C",annot_int$louvain_partition)
-    
-    umap_res <- cds@int_colData$reducedDims$UMAP # with R3.6.2 and higher for SummarizedExperiment, otherwise cds@reducedDims[[2]]
-    pca_object <-cds@int_colData$reducedDims$PCA
-    
-    save(umap_res,file=file.path(RDatadir,"umap.RData"))
-    save(pca_object,file=file.path(RDatadir,"pca.RData"))
-    
-    NormCounts <- t(t(exprs(cds)) /  pData(cds)[, 'Size_Factor']) #keep format sparse matrix, need to have row and colnames separate
-    LogCounts <- log(NormCounts+1,2)
-    
-    save(NormCounts,file=file.path(RDatadir,"NormCounts.RData"))
-    save(LogCounts,file=file.path(RDatadir,"LogCounts.RData"))
-    save(annot_int,file=file.path(RDatadir,"annot_int.RData"))
-    rm(NormCounts); gc()
-    rm(cds); gc()
-}
+rownames(Signal) <- gene_metadata$Symbol
+rownames(annot_int) <- annot_int$cell_id
+rownames(gene_metadata) <- gene_metadata$Symbol
+cds <- new_cell_data_set(Signal[,rownames(annot_int)],
+                         cell_metadata = annot_int,
+                         gene_metadata  = gene_metadata)
+rm(Signal);gc()
+cds <- preprocess_cds(cds,method='PCA', norm_method='size_only',num_dim=50)
+
+cds <- reduce_dimension(cds, reduction_method = 'UMAP')
+cds <-  cluster_cells(cds)
+
+annot_int$louvain_cluster <- cds@clusters[[1]]$clusters
+annot_int$louvain_cluster <- paste0("C",annot_int$louvain_cluster)
+
+annot_int$louvain_partition <- cds@clusters[[1]]$partition
+annot_int$louvain_partition <- paste0("C",annot_int$louvain_partition)
+
+umap_res <- cds@int_colData$reducedDims$UMAP # with R3.6.2 and higher for SummarizedExperiment, otherwise cds@reducedDims[[2]]
+pca_object <-cds@int_colData$reducedDims$PCA
+
+save(umap_res,file=file.path(RDatadir,"umap.RData"))
+save(pca_object,file=file.path(RDatadir,"pca.RData"))
+
+NormCounts <- t(t(exprs(cds)) /  pData(cds)[, 'Size_Factor']) #keep format sparse matrix, need to have row and colnames separate
+LogCounts <- log(NormCounts+1,2)
+
+save(NormCounts,file=file.path(RDatadir,"NormCounts.RData"))
+save(LogCounts,file=file.path(RDatadir,"LogCounts.RData"))
+save(annot_int,file=file.path(RDatadir,"annot_int.RData"))
+rm(NormCounts); gc()
+rm(cds); gc()
+
 ```
 
 
@@ -159,10 +160,10 @@ anocol <- geco.unsupervised::geco.annotToCol4(annotS=annot_int[,annotCol],annotT
 control <- c("#E0E0E0","#BDBDBD","#757575","#ffcbcb")
 persister_color <- c("#DCEDC8","#9CCC65","#4CAF50","#009688")
 res_color <- c("#FFEB3B","#FFC107","#FF9800","#FF5722")
-color_PDX <- c(control[c(1,4,2)],persister_color[c(1,3)],res_color[c(2)])
+color_PDX <- c(control[c(1,2)],persister_color[c(1,3)],res_color[c(2)])
 
 
-samples_PDX = c("HBCx95_chemonaive", "HBCx95_responder", "HBCx95_recurrent", "HBCx95_residual", "HBCx95_persister",   "HBCx95_resistant")
+samples_PDX = c("HBCx95_chemonaive", "HBCx95_recurrent", "HBCx95_residual", "HBCx95_persister",   "HBCx95_resistant")
 corres <- data.frame(PDX=samples_PDX,color=color_PDX)
 anocol[,"sample_id"] <- as.character(corres$color[match(annot_int$sample_id,corres$PDX)])
 
@@ -170,22 +171,19 @@ corres_cell_cycle <- data.frame(phase=c("G1","G2M","S"),color=c("#e896aaff","#55
 indice <- which(annotCol=="cell_cycle")
 anocol[,indice] <- as.character(corres_cell_cycle$color[match(annot_int$cell_cycle,corres_cell_cycle$phase)])
 
-corres_cluster <- data.frame(phase=c("C1","C2","C3","C4","C5"),color=c("#b9cced","#6a8caf","#438a5e","#e2979c","#ff9c71"))
+corres_cluster <- data.frame(phase=c("C1","C2","C3","C4"),color=c("#6a8caf","#e2979c","#b9cced","#438a5e"))
 indice <- which(annotCol=="clustCol5")
 anocol[,indice] <- as.character(corres_cluster$color[match(annot_int$clustCol5,corres_cluster$phase)])
-corres_cluster <- data.frame(phase=c("C1","C2","C3","C4","C5"),color=c("#438a5e","#6a8caf","#ff9c71","#e2979c","#b9cced"))
 indice <- which(annotCol=="louvain_cluster")
 anocol[,indice]  <- as.character(corres_cluster$color[match(annot_int$louvain_cluster,corres_cluster$phase)])
 
 
 png(file.path(resSUBdir,"Legend_sample_scRNAseq.png"), height=2000,width=1500,res=300)
-par(mfrow=c(5,2))
-barplot(rep(1,6),col=corres$color, cex.names  =0.8,horiz=F,names.arg=corres$PDX,las=2)
+barplot(rep(1,5),col=corres$color, cex.names  =0.8,horiz=F,names.arg=corres$PDX,las=2)
 dev.off()
 
 png(file.path(resSUBdir,"Legend_cluster_scRNAseq.png"), height=2000,width=1500,res=300)
-par(mfrow=c(5,2))
-barplot(rep(1,5),col=corres_cluster$color, cex.names  =0.8,horiz=F,names.arg=c("C1","C2","C3","C4","C5"),las=2)
+barplot(rep(1,4),col=corres_cluster$color, cex.names  =0.8,horiz=F,names.arg=c("C1","C2","C3","C4"),las=2)
 dev.off()
 
 png(file.path(resSUBdir_boxplots,"Boxplot_rRNA.png"),width=1500,height=1500,res=300)
@@ -207,7 +205,7 @@ load(file.path(RDatadir,"umap.RData"))
 
 for(j in 1:ncol(anocol))
     {
-    # png(file.path(resSUBdir_UMAP,paste0("UMAP_",colnames(anocol)[j],".png")), height=1350,width=1200,res=300)
+    png(file.path(resSUBdir_UMAP,paste0("UMAP_",colnames(anocol)[j],".png")), height=1350,width=1200,res=300)
   if(class(annot_int[1,colnames(anocol)[j]])=="numeric"){
     plot((umap_res), col=alpha(anocol[,j],0.3),pch=20,cex=0.6,
          main=paste0(colnames(anocol)[j]," min=",round(min(annot_int[,colnames(anocol)[j]]),digits=3)," max=",round(max(annot_int[,colnames(anocol)[j]]),digits=3)),
@@ -217,17 +215,17 @@ for(j in 1:ncol(anocol))
          xlab="component 1",ylab="component 2")
              if(colnames(anocol)[j]=="sample_id"){
                  #Plot persister with add plot since there is too low cell number
-                 pers = which(annot_int$sample_id=="HBCx95_persister_6souris")
+                 pers = which(annot_int$sample_id=="HBCx95_persister")
                  points(umap_res[pers,], col=alpha(anocol[pers,j],0.5),pch=20,cex=0.6)
                  
              }
          }
   
   
-    # dev.off()
+    dev.off()
     }
 
-# Subsample plot
+# Subsample 
 scExp = create_scExp(LogCounts,annot_int[,1:4])
 set.seed(47)
 scExp = subsample_scExp(scExp,n_cells = 500)
@@ -273,14 +271,16 @@ ClusterMembership <- as.data.frame.matrix(table(annot_int$sample_id,annot_int$lo
 ClusterMembership$pvalue <- 0
 ClusterMembership$sample_id <- rownames(ClusterMembership)
 for(i in c(1:(dim(ClusterMembership)[1]))){
- test <- fisher.test(ClusterMembership[c(i,6),c(1:5)]) 
+ test <- fisher.test(ClusterMembership[c(i,1),c(1:5)]) 
   ClusterMembership$pvalue[i] <- test$p.value
 }
 
 WriteXLS(ClusterMembership,file.path(resSUBdir_boxplots,"ClusterMembership.xls"),row.names = T)
 
 ClusterMembership$sample_id <- rownames(ClusterMembership)
-ClusterMembership_b <- ClusterMembership[,-6] %>% tidyr::pivot_longer(cols=c("C1","C2","C3","C4","C5"),names_to = "cluster",values_to = "freq") %>% dplyr::mutate(cluster=factor(cluster, levels =c("C3","C1","C2","C4","C5"))) %>% dplyr::mutate(sample_id=factor(sample_id, levels =c(as.character(corres$PDX[c(1,3,4,2,5,6)])))) %>% dplyr::group_by(sample_id) %>% dplyr::mutate(freq_prop=freq/sum(freq))
+ClusterMembership_b <- ClusterMembership[,-5] %>% tidyr::pivot_longer(cols=c("C1","C2","C3","C4"),names_to = "cluster",values_to = "freq") %>% dplyr::mutate(cluster=factor(cluster, levels =c("C3","C1","C2","C4"))) %>%
+  dplyr::mutate(sample_id=factor(sample_id, levels =c(as.character(corres$PDX[c(1,3,4,2,5)])))) %>%
+  dplyr::group_by(sample_id) %>% dplyr::mutate(freq_prop=freq/sum(freq))
 
 png(file.path(resSUBdir_boxplots,"ClusterMembership.png"),width=1000,height=1200,res=300)
 ggplot(ClusterMembership_b) +geom_col(aes(y=freq_prop,x=sample_id,fill=cluster),width = 0.75) + scale_fill_manual(values=as.character(corres_cluster$color[c(3,1,2,4,5)])) + theme_classic() +theme(axis.text.x=element_blank(),axis.title = element_blank(), legend.position = "None")
@@ -302,7 +302,7 @@ intra_corr$sample_id = factor(intra_corr$sample_id, levels =samples_PDX)
 
 png(file.path(resSUBdir_boxplots,paste0("Sample_intracorrelation_violin.png")),height=1000,width=1000,res=300)
 ggplot(intra_corr,aes(x=sample_id,y=intra_corr, fill=sample_id)) + 
-  geom_violin(alpha=0.8) + theme_classic() + scale_fill_manual(values=as.character(corres$color)[c(1,2,4,3,6,5)]) +
+  geom_violin(alpha=0.8) + theme_classic() + scale_fill_manual(values=as.character(corres$color)[c(1,2,4,3,5)]) +
   stat_summary(fun=median, geom="point", size=2, color="black") + theme(axis.text.x = element_text(angle=90))
 dev.off()
 ```
@@ -314,7 +314,7 @@ dev.off()
 CellCycle <- as.data.frame.matrix(table(annot_int$sample_id,annot_int$cell_cycle))
 CellCycle$pvalue <- 0
 for(i in c(1:(dim(CellCycle)[1]))){
- test <- chisq.test(CellCycle[c(i,6),c(1:3)]) 
+ test <- chisq.test(CellCycle[c(i,1),c(1:3)]) 
   CellCycle$pvalue[i] <- test$p.value
 }
 
@@ -351,21 +351,23 @@ gc()
 metadata = annot_int_sub
 feature = gene_metadata
 
-table(metadata$louvain_partition, metadata$sample_id)
+table(metadata$louvain_cluster, metadata$sample_id)
 #Get the gene list of Persister cells (6souris) overexpressed
 mygps <- list(
-'persister_vs_UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_persister") ),"cell_id"],
-'C2_vs_UNT'=metadata[which(metadata$louvain_partition %in% c("C2") ),"cell_id"],
-'C3_vs_UNT'=metadata[which(metadata$louvain_partition %in% c("C3") ),"cell_id"],
-'C4_vs_UNT'=metadata[which(metadata$louvain_partition %in% c("C4") ),"cell_id"]
+'persister_vs_UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_persister") ),"cell_id"]
+# ,
+# 'C2_vs_UNT'=metadata[which(metadata$louvain_partition %in% c("C2") ),"cell_id"],
+# 'C3_vs_UNT'=metadata[which(metadata$louvain_partition %in% c("C3") ),"cell_id"],
+# 'C4_vs_UNT'=metadata[which(metadata$louvain_partition %in% c("C4") ),"cell_id"]
 )
 sapply(mygps,length)
 
 myrefs <- list(
-    'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_chemonaive") ),"cell_id"],
-    'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_chemonaive") ),"cell_id"],
-    'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_chemonaive") ),"cell_id"],
     'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_chemonaive") ),"cell_id"]
+    # ,
+    # 'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_chemonaive") ),"cell_id"],
+    # 'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_chemonaive") ),"cell_id"],
+    # 'UNT'=metadata[which(metadata$sample_id %in% c("HBCx95_chemonaive") ),"cell_id"]
 )
 sapply(myrefs,length)
 
@@ -555,14 +557,6 @@ anocol2 <- geco.unsupervised::geco.annotToCol4(
     plotLegend=T, plotLegendFile = file.path(resSUBdir,"Annotation_legends.pdf"),
     scale_q = "inferno")
 for(i in intersect(colnames(anocol),colnames(anocol2))) anocol2[,i] = anocol[,i]
-
-png(file.path(resdir_boxplots,"Boxplot_KEGG_TGFB_FC2.png"),width=1500,height=1500,res=300)
-boxplot(annot_int_2$KEGG_TGF_BETA_SIGNALING_PATHWAY_logFC2~annot_int_2$sample_id,las=2)
-dev.off()
-
-png(file.path(resdir_boxplots,"Boxplot_KEGG_TGFB_FC1.png"),width=1500,height=1500,res=300)
-boxplot(annot_int_2$KEGG_TGF_BETA_SIGNALING_PATHWAY_logFC1~annot_int_2$sample_id,las=2)
-dev.off()
 
 png(file.path(resdir_boxplots,"Boxplot_INHBA.png"),width=1500,height=1500,res=300)
 boxplot(annot_int_2$INHBA~annot_int_2$sample_id,las=2)
