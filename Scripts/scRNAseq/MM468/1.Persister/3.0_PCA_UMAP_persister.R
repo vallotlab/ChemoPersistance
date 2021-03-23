@@ -14,106 +14,13 @@ RDatadir <- file.path(resdir,"RData") ; if(!file.exists(RDatadir)){dir.create(RD
 
 source(file.path(maindir,"Scripts","global_var.R"))
 
-################################################################################################
-# PCA, UMAP and louvain clustering with Monocle 3  on all cells for the paper------------------
-################################################################################################
-load(file.path(RDatadir,"MM468.RData"))
-annot_int <- annot
-
+annotCol <- c("sample_id","total_features","rRNA","louvain_partition","cons_BC_lenti","CDH2","TWIST1","TGFB1")
 # Select initial population, 4 'persister' states (early) and 3 'resistant' states (late)
 sample_persisters_study = c(
   "MM468_chemonaive","MM468_5FU1_day33","MM468_5FU3_day50","MM468_5FU2_day67",
   "MM468_5FU3_day77", "MM468_5FU2_day171","MM468_5FU3_day202",
   "MM468_5FU1_day214"
-  )
-
-annot_int <- annot_int[annot_int$sample_id %in% sample_persisters_study & annot_int$doublet_score<10000,]
-annot_int$sample_id <- as.character(annot_int$sample_id)
-rownames(annot_int) <- annot_int$cell_id
-
-cds <- new_cell_data_set(Signal[row.names(gene_metadata),row.names(annot_int)],
-                         cell_metadata = annot_int,
-                         gene_metadata  = gene_metadata)
-
-gc()
-cds <- preprocess_cds(cds,method='PCA', norm_method='size_only',num_dim=50)
-
-cds <- reduce_dimension(cds, reduction_method = 'UMAP')
-cds <-  cluster_cells(cds)
-
-umap_res <- cds@int_colData$reducedDims[[2]] # with R3.6.2 and higher for SummarizedExperiment, otherwise cds@reducedDims[[2]]
-pca_object <- cds@int_colData$reducedDims[[1]]
-
-annot_int$louvain_partition <- cds@clusters[[1]]$partitions
-annot_int$louvain_partition <- paste0("C",annot_int$louvain_partition)
-
-save(umap_res,file=file.path(RDatadir,"umap_persister.RData"))
-save(pca_object,file=file.path(RDatadir,"pca_persister.RData"))
-
-NormCounts <- t(t(exprs(cds)) /  pData(cds)[, 'Size_Factor'])
-LogCounts <- log(NormCounts+1,2)
-rm(NormCounts)
-gc()
-save(LogCounts,file=file.path(RDatadir,"LogCounts.RData"))
-RawCounts = exprs(cds)
-save(RawCounts,file=file.path(RDatadir,"RawCounts.RData"))
-
-
-# ################################################################################
-# # Cell cycle scoring with Seurat  ##############################################
-# ################################################################################
- 
- 
-# # A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can
-# # segregate this list into markers of G2/M phase and markers of S phase
-s.genes <- cc.genes$s.genes
-g2m.genes <- cc.genes$g2m.genes
-
-# Create our Seurat object and complete the initalization steps
-rownames(Signal) <- gene_metadata$Symbol
-marrow <- CreateSeuratObject(counts = Signal[,row.names(annot_int)],meta.data=annot_int)
-marrow <- NormalizeData(marrow)
-marrow <- FindVariableFeatures(marrow, selection.method = "vst")
-marrow <- ScaleData(marrow, features = rownames(marrow))
-marrow <- RunPCA(marrow, features = VariableFeatures(marrow), ndims.print = 1:10, nfeatures.print = 10)
-# DimPlot(marrow, reduction = "pca")
-# DimHeatmap(marrow, dims = 1:3, cells = 1000, balanced = TRUE)
-# ElbowPlot(marrow)
-marrow <- FindNeighbors(marrow, dims = 1:20)
-marrow  <- FindClusters(marrow, resolution = 0.5)
-marrow <- RunUMAP(marrow, dims = 1:20)
-
-#DimPlot(marrow, reduction = "umap")
-
-marrow <- CellCycleScoring(marrow, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
-#RidgePlot(marrow, features = c("PCNA", "TOP2A", "MCM6", "MKI67"), ncol = 2)
-
-annot_seurat <- data.frame (cell_id=as.character(names(marrow$Phase)),cell_cycle=as.character((marrow$Phase)))
-
-annot_int$cell_cycle <- marrow$Phase[match(annot_int$cell_id,annot_seurat$cell_id)]
-save(annot_int,gene_metadata,file=file.path(RDatadir,"persister_gene_cell_annot.RData"))
-
-################################################################################################
-###### Coloring and annotations  #################################
-################################################################################################
-load(file.path(RDatadir,"LogCounts.RData"))
-load(file.path(RDatadir,"persister_gene_cell_annot.RData"))
-load(file.path(RDatadir,"umap_persister.RData"))
-load(file.path(RDatadir,"pca_persister.RData"))
-
-annot_int$sample_id <- as.character(annot_int$sample_id)
-annotCol <- c("sample_id","total_features","cell_cycle","rRNA","louvain_partition","cons_BC_lenti")
-
-annotText <- "sample_id"
-hcText <- "sample_id"  ## column used in hierarchical clustering # change names from Sample_x to actual sample name
-
-ribo <- grepl("^RP[SL]",gene_metadata$Symbol)
-annot_int$rRNA <- apply(LogCounts[ribo,],2,mean)
-gc()
-set.seed(7)
-anocol <- geco.unsupervised::geco.annotToCol4(
-  annotS=annot_int[,annotCol],annotT=annot_int,plotLegend=T,
-  plotLegendFile=file.path(resdir,"Annotation_legends.pdf"), scale_q = "inferno")
+)
 
 #Common palette for all MM468 experiments
 control <- c("#E0E0E0","#BDBDBD","#757575")
@@ -124,45 +31,163 @@ color_MM468 <- c(control[2],persister_color,res_color[c(1:3)])
 corres_sample <- data.frame(
   Sample=sample_persisters_study,
   color=color_MM468)
-anocol[,"sample_id"] <- as.character(corres_sample$color[match(annot_int$sample_id,corres_sample$Sample)])
 
-corres_cell_cycle <- data.frame(phase=c("G1","G2M","S"),color=c("#e896aaff","#553fc2ff","#5d6c7dff"))
-indice <- which(annotCol=="cell_cycle")
-anocol[,indice] <- as.character(corres_cell_cycle$color[match(annot_int$cell_cycle,corres_cell_cycle$phase)])
+# If re-computing from scratch - set RECOMPUTE to TRUE else if you just want to
+# plot the UMAPS, set RECOMPUTE to FALSE 
+RECOMPUTE = FALSE
 
-corres_cluster <- data.frame(cluster=c("C10","C2","C3","C4","C6","C8"),
-                             color=c("#b9cced","#438a5e","#ffeadb","#ade498","#ff9c71","#ff847c"))
-corres_cluster$cluster <- as.character(corres_cluster$cluster)
-corres_cluster$color <- as.character(corres_cluster$color)
-indice <- which(annotCol=="louvain_partition")
-anocol[,indice] <- as.character(corres_cluster$color[match(annot_int$louvain_partition,corres_cluster$cluster)])
+if(RECOMPUTE){
+  
+  ################################################################################################
+  # PCA, UMAP and louvain clustering with Monocle 3  on all cells for the paper------------------
+  ################################################################################################
+  load(file.path(RDatadir,"MM468.RData"))
+  annot_int <- annot
 
+  annot_int <- annot_int[annot_int$sample_id %in% sample_persisters_study & annot_int$doublet_score<10000,]
+  annot_int$sample_id <- as.character(annot_int$sample_id)
+  rownames(annot_int) <- annot_int$cell_id
+  
+  cds <- new_cell_data_set(Signal[row.names(gene_metadata),row.names(annot_int)],
+                           cell_metadata = annot_int,
+                           gene_metadata  = gene_metadata)
+  
+  gc()
+  cds <- preprocess_cds(cds,method='PCA', norm_method='size_only',num_dim=50)
+  
+  cds <- reduce_dimension(cds, reduction_method = 'UMAP')
+  cds <-  cluster_cells(cds)
+  
+  umap_res <- cds@int_colData$reducedDims[[2]] # with R3.6.2 and higher for SummarizedExperiment, otherwise cds@reducedDims[[2]]
+  pca_object <- cds@int_colData$reducedDims[[1]]
+  
+  annot_int$louvain_partition <- cds@clusters[[1]]$partitions
+  annot_int$louvain_partition <- paste0("C",annot_int$louvain_partition)
+  
+  #visual check before save
+  plot_cells(cds, color_cells_by="sample_id", group_cells_by="partition",label_cell_groups = F)
+  #plot_cells(cds,genes="TGFB1")
+  
+  save(umap_res,file=file.path(RDatadir,"umap_persister.RData"))
+  save(pca_object,file=file.path(RDatadir,"pca_persister.RData"))
+  save(cds,file=file.path(RDatadir,"cds_persister.RData"))
+  
+  NormCounts <- t(t(exprs(cds)) /  pData(cds)[, 'Size_Factor'])
+  LogCounts <- log(NormCounts+1,2)
+  rm(NormCounts)
+  gc()
+  save(LogCounts,file=file.path(RDatadir,"LogCounts.RData"))
+  RawCounts = exprs(cds)
+  save(RawCounts,file=file.path(RDatadir,"RawCounts.RData"))
+  
+  # ################################################################################
+  # # Cell cycle scoring with Seurat  ##############################################
+  # ################################################################################
+  
+  # # A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can
+  # # segregate this list into markers of G2/M phase and markers of S phase
+  s.genes <- cc.genes$s.genes
+  g2m.genes <- cc.genes$g2m.genes
+  
+  # Create our Seurat object and complete the initalization steps
+  rownames(Signal) <- gene_metadata$Symbol
+  marrow <- CreateSeuratObject(counts = Signal[,row.names(annot_int)],meta.data=annot_int)
+  marrow <- NormalizeData(marrow)
+  marrow <- FindVariableFeatures(marrow, selection.method = "vst")
+  marrow <- ScaleData(marrow, features = rownames(marrow))
+  marrow <- RunPCA(marrow, features = VariableFeatures(marrow), ndims.print = 1:10, nfeatures.print = 10)
+  # DimPlot(marrow, reduction = "pca")
+  # DimHeatmap(marrow, dims = 1:3, cells = 1000, balanced = TRUE)
+  # ElbowPlot(marrow)
+  marrow <- FindNeighbors(marrow, dims = 1:20)
+  marrow  <- FindClusters(marrow, resolution = 0.5)
+  marrow <- RunUMAP(marrow, dims = 1:20)
+  
+  #DimPlot(marrow, reduction = "umap")
+  
+  marrow <- CellCycleScoring(marrow, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+  #RidgePlot(marrow, features = c("PCNA", "TOP2A", "MCM6", "MKI67"), ncol = 2)
+  
+  annot_seurat <- data.frame (cell_id=as.character(names(marrow$Phase)),cell_cycle=as.character((marrow$Phase)))
+  
+  annot_int$cell_cycle <- marrow$Phase[match(annot_int$cell_id,annot_seurat$cell_id)]
+  save(annot_int,gene_metadata,file=file.path(RDatadir,"persister_gene_cell_annot.RData"))
+  
+  ################################################################################################
+  ###### Coloring and annotations  #################################
+  ################################################################################################
+  load(file.path(RDatadir,"LogCounts.RData"))
+  load(file.path(RDatadir,"persister_gene_cell_annot.RData"))
+  load(file.path(RDatadir,"umap_persister.RData"))
+  load(file.path(RDatadir,"pca_persister.RData"))
 
-png(file.path(resdir,"Legend_sample_scRNAseq.png"), height=2000,width=1500,res=300)
-barplot(rep(1,6),col=corres_sample$color, cex.names  =0.8,horiz=F,names.arg=corres_sample$PDX,las=2)
-dev.off()
+  rownames(annot_int) <- annot_int$cell_id
+  annot_int$sample_id <- as.character(annot_int$sample_id)
+  
+  annotCol <- c("sample_id","total_features","rRNA","louvain_partition","cons_BC_lenti","CDH2","TWIST1","TGFB1")
+  
+  annotText <- "sample_id"
+  hcText <- "sample_id"  ## column used in hierarchical clustering # change names from Sample_x to actual sample name
+  
+  ribo <- grepl("^RP[SL]", rownames(LogCounts))
+  annot_int$rRNA <- apply(LogCounts[ribo,],2,mean)
+  gc()
+  set.seed(7)
+  
+  annot_int$CDH2 <- LogCounts[which(rownames(LogCounts) == "CDH2"), ]
+  annot_int$TWIST1 <- LogCounts[which(rownames(LogCounts) == "TWIST1"),]
+  annot_int$TGFB1 <- LogCounts[which(rownames(LogCounts) == "TGFB1"),]
+  annot_int$LAMB1 <- LogCounts[which(rownames(LogCounts) == "LAMB1"),]
+  
+  anocol <- geco.annotToCol4(
+    annotS=annot_int[,annotCol],annotT=annot_int,plotLegend=T,
+    plotLegendFile=file.path(resdir,"Annotation_legends.pdf"), scale_q = "inferno")
+  rownames(anocol) = annot_int$cell_id
 
-png(file.path(resdir,"Legend_cluster_scRNAseq.png"), height=2000,width=1500,res=300)
-barplot(rep(1,5),col=corres_cluster$color, cex.names  =0.8,horiz=F,
-        names.arg=c("C1","C2","C3","C4","C5"),las=2)
-dev.off()
-
-png(file.path(resdir_boxplots,"Boxplot_rRNA.png"),width=1500,height=1500,res=300)
-boxplot(annot_int$rRNA~annot_int$sample_id,las=2)
-dev.off()
-
-save(anocol,file=file.path(RDatadir,"anocol.RData"))
+  anocol[,"sample_id"] <- as.character(corres_sample$color[match(annot_int$sample_id,corres_sample$Sample)])
+  
+  corres_cell_cycle <- data.frame(phase=c("G1","G2M","S"),color=c("#e896aaff","#553fc2ff","#5d6c7dff"))
+  indice <- which(annotCol=="cell_cycle")
+  anocol[,indice] <- as.character(corres_cell_cycle$color[match(annot_int$cell_cycle,corres_cell_cycle$phase)])
+  
+  corres_cluster <- data.frame(cluster=c("C10","C2","C3","C4","C6","C8"),
+                               color=c("#b9cced","#438a5e","#ffeadb","#ade498","#ff9c71","#ff847c"))
+  corres_cluster$cluster <- as.character(corres_cluster$cluster)
+  corres_cluster$color <- as.character(corres_cluster$color)
+  indice <- which(annotCol=="louvain_partition")
+  anocol[,indice] <- as.character(corres_cluster$color[match(annot_int$louvain_partition,corres_cluster$cluster)])
+  
+  png(file.path(resdir,"Legend_sample_scRNAseq.png"), height=2000,width=1500,res=300)
+  barplot(rep(1,8),col=as.character(corres_sample$color), cex.names  =0.8,horiz=F,names.arg=as.character(corres_sample$Sample),las=2)
+  dev.off()
+  
+  png(file.path(resdir,"Legend_cluster_scRNAseq.png"), height=2000,width=1500,res=300)
+  barplot(rep(1,5),col=corres_cluster$color, cex.names  =0.8,horiz=F,
+          names.arg=c("C1","C2","C3","C4","C5"),las=2)
+  dev.off()
+  
+  png(file.path(resdir_boxplots,"Boxplot_rRNA.png"),width=1500,height=1500,res=300)
+  boxplot(annot_int$rRNA~annot_int$sample_id,las=2)
+  dev.off()
+  
+  save(anocol,file=file.path(RDatadir,"anocol_tokeep.RData"))
+  
+}
 
 ####################################################################################
 ###### Plot UMAP results ###########################################################
 ####################################################################################
+load(file.path(RDatadir,"anocol.RData"))
+load(file.path(RDatadir,"umap_persister.RData"))
+load(file.path(RDatadir,"persister_gene_cell_annot.RData"))
+
 umap_res <- umap_res[annot_int$cell_id,]
 
 for(j in 1:ncol(anocol))
 {
-  png(file.path(resdir_UMAP,paste0("UMAP_",colnames(anocol)[j],".png")), height=1350,width=1200,res=300) 
+  png(file.path(resdir_UMAP,paste0("UMAP_",colnames(anocol)[j],".png")), height=1350,width=1200,res=300)
   if(class(annot_int[1,colnames(anocol)[j]])=="numeric"){
-  plot((umap_res[annot_int$cell_id,]), col=alpha(anocol[,j],0.2),pch=20,
+  plot((umap_res[annot_int$cell_id,]), col=alpha(anocol[annot_int$cell_id,j],0.2),pch=20,
        cex=0.4,main=paste0(colnames(anocol)[j],
                            " min=",round(min(annot_int[,colnames(anocol)[j]]),digits=3),
                            " max=",round(max(annot_int[,colnames(anocol)[j]]),digits=3)),
@@ -177,30 +202,29 @@ for(j in 1:ncol(anocol))
 
 indice <- which(annotCol=="cons_BC_lenti")
 if(length(indice) >0 ){
-  png(file.path(resdir_UMAP,paste0("UMAP_",colnames(anocol)[indice],".png")), height=1150,width=950,res=350) 
+  png(file.path(resdir_UMAP,paste0("UMAP_",colnames(anocol)[indice],".png")), height=1150,width=950,res=350)
   plot((umap_res[!is.na(annot_int$cons_BC_lenti),]),
        col=alpha(anocol[!is.na(annot_int$cons_BC_lenti),indice],0.5),
        pch=20,cex=0.4,main=paste0(colnames(anocol)[indice]," perplexity=30"),xlab="component 1",ylab="component 2",ylim=c(min(umap_res[,2]),max(umap_res[,2])))
   dev.off()
   
-  png(file.path(resdir_UMAP,paste0("exp3_UMAP_",colnames(anocol)[indice],".png")), height=1150,width=950,res=350) 
+  png(file.path(resdir_UMAP,paste0("exp3_UMAP_",colnames(anocol)[indice],".png")), height=1150,width=950,res=350)
   indice <- which(annotCol=="cons_BC_lenti")
   plot((umap_res[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU3_day50","MM468_5FU3_day77","MM468_5FU3_day202"),]), col=alpha(anocol[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU3_day50","MM468_5FU3_day77","MM468_5FU3_day202"),indice],0.8),pch=20,cex=0.4,main=paste0(colnames(anocol)[indice]," perplexity=30"),
        xlab="component 1",ylab="component 2",ylim=c(min(umap_res[,2]),max(umap_res[,2])), xlim=c(min(umap_res[,1]),max(umap_res[,1])))
   dev.off()
   
-  png(file.path(resdir_UMAP,paste0("exp5_UMAP_",colnames(anocol)[indice],".png")), height=1150,width=950,res=350) 
+  png(file.path(resdir_UMAP,paste0("exp5_UMAP_",colnames(anocol)[indice],".png")), height=1150,width=950,res=350)
   indice <- which(annotCol=="cons_BC_lenti")
   plot((umap_res[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU5_day67","MM468_5FU5_day171"),]), col=alpha(anocol[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU5_day67","MM468_5FU5_day171"),indice],0.8),pch=20,cex=0.4,main=paste0(colnames(anocol)[indice]," perplexity=30"),
        xlab="component 1",ylab="component 2",ylim=c(min(umap_res[,2]),max(umap_res[,2])), xlim=c(min(umap_res[,1]),max(umap_res[,1])))
   dev.off()
   
-  png(file.path(resdir_UMAP,paste0("exp6_UMAP_",colnames(anocol)[indice],".png")), height=1150,width=950,res=350) 
+  png(file.path(resdir_UMAP,paste0("exp6_UMAP_",colnames(anocol)[indice],".png")), height=1150,width=950,res=350)
   indice <- which(annotCol=="cons_BC_lenti")
   plot((umap_res[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU6_day33","MM468_5FU6_day214"),]), col=alpha(anocol[!is.na(annot_int$cons_BC_lenti) & annot_int$sample_id %in% c("MM468_chemonaive","MM468_5FU6_day33","MM468_5FU6_day214"),indice],0.8),pch=20,cex=0.4,main=paste0(colnames(anocol)[indice]," perplexity=30"),
        xlab="component 1",ylab="component 2",ylim=c(min(umap_res[,2]),max(umap_res[,2])), xlim=c(min(umap_res[,1]),max(umap_res[,1])))
   dev.off()
-  
   
   #count number of barcodes detected per expression group: C10, C2, C3, C4, C6, C8
   stats_detection <- annot_int %>% mutate(
@@ -215,9 +239,9 @@ if(length(indice) >0 ){
     mutate(sample_id=factor(sample_id,levels=sample_persisters_study)) %>%
     group_by(sample_id,louvain_partition) %>%
     summarise(diff_barcode=length(unique(cons_BC_lenti)),
-              barcode=length(cons_BC_lenti),
-              diversity=length(unique(cons_BC_lenti))/length(cons_BC_lenti)) %>% 
-    filter(barcode>15) 
+              barcode=length(which(!is.na(cons_BC_lenti))),
+              diversity=length(unique(cons_BC_lenti))/length(which(!is.na(cons_BC_lenti)))) %>% 
+    filter(barcode>10) 
   
   
   png(file.path(resdir_boxplots,"Lineage_barcode_detection_scRNA.png"), height=1500,width=1500,res=300)
@@ -233,6 +257,10 @@ if(length(indice) >0 ){
     theme_classic() +scale_fill_manual(values=as.character(corres_sample$color))
   dev.off()
 }
+
+WriteXLS(as.data.frame(stats_barcode),ExcelFileName=file.path(resdir,"NumberUniqueLineage_sample_cluster.xls"))
+contingency <- as.data.frame.matrix(table(annot_int$sample_id,annot_int$louvain_partition))
+WriteXLS((contingency),ExcelFileName=file.path(resdir,"NumberCell_cluster_sampleid.xls"),row.names = T)
 
 ################################################################################################################
 # Hierarchical clustering to group samples in complement to Louvain clustering on a subset of cells ############
@@ -441,5 +469,12 @@ ggplot(intra_corr[sel,],aes(x=first_cell_ExpressionGroup,y=Corr, fill=first_cell
 dev.off()
 
 
+##Lineage diversity
   
-  
+mat_index <- annot_int %>% group_by(sample_id,louvain_partition) %>% summarise(index=length(unique(lineage_barcode))/length(which(!is.na(lineage_barcode))),number=length(which(!is.na(lineage_barcode)))) 
+mat_index <- mat_index[mat_index$number>10,]
+WriteXLS(as.data.frame(mat_index),ExcelFileName=file.path(resdir,"NumberUniqueLineage_sample_cluster.xls"))
+contingency <- as.data.frame.matrix(table(annot_int$sample_id,annot_int$louvain_partition))
+WriteXLS((contingency),ExcelFileName=file.path(resdir,"NumberCell_cluster_sampleid.xls"),row.names = T)
+
+         
