@@ -1,0 +1,199 @@
+---
+title: "Dynamics of lineage tracing barcodes in MDA-MB-468 cells in persister 5-FU state"
+author: "Céline Vallot"
+date: "04/01/2021"
+output: html_document
+
+---
+
+```{r setup, include=FALSE}
+
+################################################################################
+# Packages and options 
+################################################################################
+library(devtools)
+library(dplyr)
+library(geco.utils)
+library(geco.visu)
+library(geco.unsupervised)
+#library(seriation)
+#library(heatmap.plus)
+library(colorRamps)
+library(viridis)
+library(corrplot)
+library(RColorBrewer)
+#library(scTools)
+options(stringsAsFactors = F)
+library(scales)
+library(ggplot2)
+
+################################################################################
+# Directories and files 
+################################################################################
+
+
+library(here)
+# Directories -------------------------------------------------------------
+maindir= here()
+resdir <- file.path(maindir,"output","scRNAseq","MM468","Persister")
+QCdir <- file.path(maindir,"output","scRNAseq","QC")
+
+resdir <- file.path(resdir, "Unsupervised") ; if(!file.exists(resdir)){dir.create(resdir)}
+resdir_UMAP <- file.path(resdir,"UMAP") ; if(!file.exists(resdir_UMAP)){dir.create(resdir_UMAP)}
+resdir_boxplots <- file.path(resdir,"boxplots") ; if(!file.exists(resdir_boxplots)){dir.create(resdir_boxplots)}
+resdir_heatmaps = file.path(resdir,"Heatmaps"); if(!dir.exists(resdir_heatmaps)) dir.create(resdir_heatmaps)
+resdir_sub = file.path(resdir,"sub500"); if(!dir.exists(resdir_sub)) dir.create(resdir_sub)
+RDatadir <- file.path(resdir,"RData") ; if(!file.exists(RDatadir)){dir.create(RDatadir)}
+
+reference_lenti <- read.csv(file.path(maindir, "annotation", "LG22_filtered.fa.gz"),comment.char = ">",header=F)
+#reference_lenti$V2 <- paste0("Lin",rownames(reference_lenti))
+
+Bulk_Lin <- read.table(file.path(maindir,"output","scRNAseq","MM468","UNC_5FU","Unsupervised","CV04_V586_UNC_withnames_renorm_all filtered_sumrep.txt"),header = T)
+
+# Bulk_UNC <- read.table("~/Dropbox/Justine_project/analysis CV04_V586_UNC/CV04_V586_UNC_withnames_renorm_all filtered_sumrep.txt",header=T)
+
+dim(Bulk_Lin)
+rownames(Bulk_Lin) <- Bulk_Lin$tag
+
+# dim(Bulk_UNC)
+# rownames(Bulk_UNC) <- Bulk_UNC$tag
+
+#adding counts from single_cell experiment
+load(file.path(maindir,"output","scRNAseq","MM468","UNC_5FU","Unsupervised","RData","annot_anocol_final.RData"))
+
+annot_sel <- annot_int
+for(Sample in names(table(annot_sel$sample_id))){
+  data_lineage <- data.frame(table(annot_sel$cons_BC_lenti[annot_sel$sample_id==Sample]))
+  colnames(data_lineage) <- c("tag",Sample)
+  Bulk_Lin <- left_join(Bulk_Lin,data_lineage)
+}
+
+Bulk_Lin[is.na(Bulk_Lin)] <- 0
+
+for(Sample in names(table(annot_sel$sample_id))){
+  Bulk_Lin[,Sample] <- Bulk_Lin[,Sample]*10000/sum(Bulk_Lin[,Sample])
+}
+
+
+# for(cluster in c("MM468_C10","MM468_C2","MM468_C4","MM468_C6","MM468_C8")){
+#   #data_lineage <- data.frame(table(annot$lineage_barcode[annot$sample_id==Sample]))
+#   #colnames(data_lineage) <- c("tag",Sample)
+#   #Bulk_Lin <- left_join(Bulk_Lin,data_lineage)
+#   Bulk_Lin[,cluster] <- Bulk_Lin[,cluster]*500/sum(Bulk_Lin[,cluster])
+# }
+
+Bulk_Lin <- Bulk_Lin[,c(-1)]
+dim(Bulk_Lin)
+
+metadata <- read.csv(file.path(maindir,"output","scRNAseq","MM468","UNC_5FU","Unsupervised","metadata.csv"),sep=";")
+
+rownames(metadata) <- metadata$sampleName
+metadata <- metadata[rownames(metadata) %in% colnames(Bulk_Lin),]; dim(metadata)
+table(metadata$exp) 
+table(metadata$condition) 
+table(metadata$person) 
+table(metadata$original_passage) 
+colnames(Bulk_Lin)
+
+#remove large unwanted tables
+#rm(Signal)
+
+################################################################################
+# Parameters 
+################################################################################
+distHC <- c("distPearson","distCosine","euclidean","maximum","manhattan","canberra","binary","minkowski")[1]
+methHC <- c("ward","ward.D","ward.D2","single","complete","average")[2]
+chRangeHM <-FALSE # whether you scale down frequencies to 0-1 values for heatmap
+hmColors <- viridis(100)
+corColors <- colorRampPalette(c("royalblue1","white","indianred1"))(256)
+annotCol <- c("Name","exp","condition","person","original_passage")
+annotText <- "Name"
+hcText <- "Name"  # column used in hierarchical clustering # change names from Sample_x to actual sample name
+
+################################################################################
+# Choose experiment to study 
+################################################################################
+#experiment <- c("exp3","exp5","exp6")
+
+interest <- c(metadata$sampleName[metadata$person=="JM"],metadata$sampleName[grep(pattern="D0_DMSO3",metadata$Name)])
+
+
+#interest <- metadata$sampleName[metadata$exp %in% experiment ]
+
+#interest <- metadata$sampleName[metadata$exp =="exp3" & metadata$person!="JM"]
+mat <- Bulk_Lin[,interest]; dim(mat)
+metadata_sel <- metadata[interest,]
+
+mat <- mat[(rowSums(mat)!=0),]
+dim(mat)
+min(rowSums(mat))
+
+anocol <- geco.annotToCol(annotS=metadata_sel[,annotCol],annotT=metadata_sel,plotLegend=T,plotLegendFile=file.path(resSUBdir,"Annotation_legends.pdf"), categCol=NULL)
+
+```
+
+### Sanity checks to evaluate Pearson's correlation score between technical replicates
+
+  
+Using an alternative to log2 transformation, asinh, we cluster samples according to Pearson's correlation score between normalized barcode frequencies. For further analysis we will generate and aggregate matrix with average score.
+
+
+
+```{r, echo=FALSE}
+corr_mat <- cor(asinh(mat))
+
+# d <- distPearson(tmat)
+# hc <- hclust(d,method=methHC)
+corrplot(corr_mat, tl.col="black",tl.cex=0.3,order="hclust",col=rev(viridis(100)))
+
+png(file=file.path(resSUBdir,"Correlation_plot_exp3_wosingleCell.png"),res=300,height=2000,width=2000)
+corrplot(corr_mat, tl.col="black",tl.cex=0.3,order="hclust",col=rev(viridis(100)))
+dev.off()
+```
+
+
+
+Out of `r length(Samples)` drawings, `r length(outliers)` have a correlation score between the 2 technical replicates below 0.8.
+
+```{r, echo=FALSE}
+CorrScoresTech$Sample[CorrScoresTech$minCorr<0.8]
+```
+
+
+
+
+
+### Comparison of DMSO and 5FU to initial 
+
+
+```{r,  out.width="30%", echo=FALSE}
+
+#all DMSO versus initial
+initial <- grep(pattern="initial",colnames(mat))
+value_initial <- asinh(rowMeans(mat[,initial]))
+colrange <- viridis(100)
+        col <- colrange[round(geco.changeRange(value_initial, newmin = 1, newmax = 100))]
+
+sc <- grep(pattern="MM468",colnames(mat))
+
+pdf(file=file.path(resSUBdir,"Correlation_persistersingleCell.pdf"),height=4, width=4)
+for (i in 1:8){
+  for (j in 1:8){
+    
+    corScore<- cor.test(asinh(mat[,i]),asinh(mat[,j]))
+plot(asinh(mat[,i])~asinh(mat[,j]),main=paste0("DMSO cor.test=",round(corScore$estimate,digits=4)," p-value=",round(corScore$p.value,digits=6)),pch=19,xlab=colnames(mat)[j],ylab=colnames(mat)[i],col=col)
+  }
+}
+
+par(mar = c(8, 2, 5, 1))
+            lims <- seq(-1, 1, length.out = 200)
+            image(matrix(lims, nc = 1), col = colrange, axes = F, 
+            xlab=paste0(min(value_initial)," to ",max(value_initial))    )
+dev.off()
+
+
+
+            
+```
+
+

@@ -1,0 +1,247 @@
+
+library(here)
+# Directories -------------------------------------------------------------
+maindir= here()
+resdir <- file.path(maindir,"output","scRNAseq","MM468","Persister")
+
+output <- file.path(resdir, "Unsupervised", "TFmotif") ; if(!file.exists(output)){dir.create(output)}
+
+
+
+RDatadir <- file.path(resdir,"RData") ; if(!file.exists(RDatadir)){dir.create(RDatadir)}
+
+source(file.path(maindir,"Scripts","global_var.R"))
+
+# If re-computing from scratch - set RECOMPUTE to TRUE else if you just want to
+# plot the UMAPS, set RECOMPUTE to FALSE 
+
+
+
+# Overexpressed genes
+# Overexpressed genes
+load(file.path(maindir,"output","scRNAseq","MM468","Persister","Unsupervised","RData","LogCounts.RData"))
+LogCounts = LogCounts[,grep("day33",colnames(LogCounts))]
+dim(LogCounts)
+BinCounts = LogCounts
+BinCounts[BinCounts>0] = 1
+rowSums(BinCounts)
+persister_DA = readxl::read_xlsx(file.path(maindir,"output","scRNAseq","MM468","Persister","Supervised",
+                                           "Tables","Differential_analysis_Limma_logFC_1.58.xlsx"))
+persister_DA$percent_expressed = rowSums(BinCounts[match(persister_DA$Symbol,rownames(BinCounts)),])/ncol(BinCounts)
+
+persister_genes = persister_DA$Symbol
+other_genes = readxl::read_xlsx(file.path(maindir,"output","scRNAseq","MM468","Persister","Supervised",
+                                          "Tables","Differential_analysis_Limma_logFC_1.58.xlsx"), sheet = 3)$Symbol
+other_genes = other_genes[which(!other_genes %in% persister_genes)]
+
+# Run ChEA3 enrichment
+library(httr)
+library(jsonlite)
+
+set.seed(47)
+system.time({
+    list_TF_enrichment = enrich_for_TF_ChEA3(persister_genes, n_random = 100, all_genes = c(persister_genes,other_genes))
+})
+save(list_TF_enrichment, file = file.path(output,"list_TF_enrichment.RData"))
+load(file = file.path(output,"list_TF_enrichment.RData"))
+
+scores_per_TF = sapply(list_TF_enrichment[2:101], function(x) {
+    vec = x$Score
+    names(vec) = x$TF
+    as.numeric(vec[order(names(vec))])
+})
+rownames(scores_per_TF) = sort(list_TF_enrichment[[1]]$TF)
+
+i = 0
+pdf(file.path(output, "TF_ChEA3_enrichment_score_TF_by_TF.pdf"))
+for(TF in list_TF_enrichment$Genes_of_interest$TF[1:100]){
+    i = i +1
+    score_TF_in_persister = as.numeric(list_TF_enrichment$Genes_of_interest$Score[i])
+    
+    distrib = data.frame(MeanRank = scores_per_TF[TF,])
+    n_random_below = length(which(distrib$MeanRank < score_TF_in_persister))
+    p = distrib %>% ggplot(aes(MeanRank)) + xlab("Mean Rank (out of 1632 TFs)") + 
+        geom_density(bw=50, color = "#009688", fill = alpha("#009688",0.3)) + theme_classic() + xlim(c(-100, 100 + max(c(score_TF_in_persister,distrib$MeanRank)))) +
+        geom_vline(xintercept = score_TF_in_persister, color = "red", lty = 2) + 
+        theme(axis.text = element_text(size = 12)) + 
+        annotate("text", label = TF, x = score_TF_in_persister + 100,  y = 0.001, col = "red", lwd = 5) +
+        ggtitle(paste0("Distribution of score for ", TF, " in 100x random gene sets.\nNumber of random subset with lower Mean Rank = ",n_random_below))
+    print(p)
+}
+dev.off()
+
+
+# All persister genes:
+pdf(file.path(output, "TF_ChEA3_enrichment_score.pdf"))
+for(top in 1:100){
+    scores = as.data.frame(sapply(list_TF_enrichment, function(x) x$Score[1:top]))
+    scores = scores %>% tidyr::gather("Run", "Score") 
+    scores = scores %>% mutate("Class" =  gsub("random_genes_.*","random_genes",Run))
+    scores$Score = 1/as.numeric(scores$Score)
+    
+    p  = scores %>% ggplot(aes(x = Class, y = Score)) + ylab("1 / ChEA3 Mean Rank Score ") + 
+        geom_violin(aes(fill = Class)) +
+        ggpubr::stat_compare_means(paired = F, method = "t.test", label.x.npc = 0.4) +
+        theme_classic() + ggtitle(paste0('Top ',top,' TFs'))
+    print(ggpubr::add_summary(p, fun = "mean_sd"))
+}
+dev.off()
+
+n_targets_explained = data.frame("TF" = paste0("TF",1:100))
+n_targets_list = list()
+n=0
+for(i in 2:101){
+    n = n+1
+    ChEA3_TF_enrichment_random = list_TF_enrichment[[i]]
+    n_targets_list[[n]] = sort(decreasing = T,unname(sapply(ChEA3_TF_enrichment_random$Overlapping_Genes,
+                                                            function(x) length(unlist(str_split(x, pattern = ",")))))[1:100])
+}
+n_targets_explained$average_targets_explained = rowMeans(as.data.frame(n_targets_list))
+
+pdf(file.path(output,"Percentage_of_targeted_persister_genes_random.pdf"))
+print(n_targets_explained %>% mutate(ratio_n_targets_in_random = 100* average_targets_explained / length(persister_genes)) %>% head(100) %>%
+          mutate(TF = fct_reorder(TF, ratio_n_targets_in_random, .desc = TRUE)) %>%
+          ggplot(aes(x=TF, y= ratio_n_targets_in_random)) + geom_bar(fill = "#009688", stat="identity") +
+          theme_classic() + theme(axis.text.x = element_text(size = 15, angle=90),
+                                  axis.text.y = element_text(size = 14)) + xlab("") + ylim(c(0,60)) + ylab("% Targeted Persister Genes")
+)
+dev.off()
+
+ChEA3_TF_enrichment_persister = list_TF_enrichment$Genes_of_interest
+ChEA3_TF_enrichment_persister$n_targets_in_persisters = sapply(ChEA3_TF_enrichment_persister$Overlapping_Genes,
+                                                               function(x) length(unlist(str_split(x, pattern = ","))))
+ChEA3_TF_enrichment_persister$Score = as.numeric(ChEA3_TF_enrichment_persister$Score)
+
+scRNA = readxl::read_xlsx(file.path(maindir, "output","scRNAseq","MM468","Persister","Supervised","Tables","Differential_analysis_Limma_logFC_1.58.xlsx"))
+
+pdf(file.path(output,"Percentage_of_targeted_persister_genes.pdf"))
+ChEA3_TF_enrichment_persister %>% mutate(ratio_n_targets_in_persister = 100* n_targets_in_persisters / 168) %>% head(100) %>%
+    mutate(TF = fct_reorder(TF, ratio_n_targets_in_persister, .desc = TRUE)) %>%
+    ggplot(aes(x=TF, y= ratio_n_targets_in_persister)) + geom_bar(fill = "#009688", stat="identity") +
+    theme_classic() + theme(axis.text.x = element_text(size = 15, angle=90),
+                            axis.text.y = element_text(size = 14)) + xlab("") + ylim(c(0,60)) + ylab("% Targeted Persister Genes")
+dev.off()
+
+pdf(file.path(output,"Percentage_of_targeted_persister_genes_overexpressed.pdf"))
+ChEA3_TF_enrichment_persister %>% mutate(ratio_n_targets_in_persister = 100* n_targets_in_persisters / 168) %>% head(100) %>% 
+    filter(TF %in% scRNA$Symbol) %>%
+    mutate(TF = fct_reorder(TF, ratio_n_targets_in_persister, .desc = TRUE)) %>%
+    ggplot(aes(x=TF, y= ratio_n_targets_in_persister)) + geom_bar(fill = "#009688", stat="identity") +
+    theme_classic() + theme(axis.text.x = element_text(size = 15, angle=90),
+                            axis.text.y = element_text(size = 14)) + xlab("") + ylim(c(0,60)) + ylab("% Targeted Persister Genes")
+dev.off()
+
+
+pdf(file.path(output,"Score_of_enriched_TFs.pdf"))
+ChEA3_TF_enrichment_persister %>% head(100) %>%
+    mutate(TF = fct_reorder(TF, 1/Score, .desc = T)) %>%
+    ggplot(aes(x=TF, y= 1/Score)) + geom_bar(fill = "#009688", stat="identity") +
+    theme_classic() + theme(axis.text.x = element_text(size = 15, angle=90),
+                            axis.text.y = element_text(size = 14)) + xlab("") + ylab("Inverse of ChEA3 Score")
+dev.off()
+
+pdf(file.path(output,"Score_of_enriched_TFs_overexpressed.pdf"))
+ChEA3_TF_enrichment_persister %>% head(100) %>% 
+    filter(TF %in% scRNA$Symbol) %>%
+    mutate(TF = fct_reorder(TF, 1/Score, .desc = T)) %>%
+    ggplot(aes(x=TF, y= 1/Score)) + geom_bar(fill = "#009688", stat="identity") +
+    theme_classic() + theme(axis.text.x = element_text(size = 15, angle=90),
+                            axis.text.y = element_text(size = 14)) + xlab("") + ylab("Inverse of ChEA3 Score")
+dev.off()
+
+n = ChEA3_TF_enrichment_persister$n_targets_in_persisters[ChEA3_TF_enrichment_persister$TF=="FOSL1"]
+tot = length(persister_genes)
+
+pdf(file.path(output,"pie_FOSL1.pdf"))
+pie(c(n, tot-n), labels =c(n, tot-n))
+dev.off()
+
+# Test whether the inverse score of the top 100 TFs is greater than the score of the top 100 TF enriched in 
+# random gene sets
+t.test(1/as.numeric(list_TF_enrichment$Genes_of_interest$Score[1:100]),1/rowMeans(scores_per_TF), alternative = "greater")
+
+
+mat = matrix(0, nrow = 168, ncol = 3,
+             dimnames = list(persister_DA$Symbol,
+                             c("FOSL1", "FOXQ1", "NR2F2")))
+targets_ChEA3_FOSL1 = unique(unlist(strsplit(ChEA3_TF_enrichment_persister$Overlapping_Genes[which(ChEA3_TF_enrichment_persister$TF=="FOSL1")], split = ",")))
+targets_ChEA3_FOXQ1 = unique(unlist(strsplit(ChEA3_TF_enrichment_persister$Overlapping_Genes[which(ChEA3_TF_enrichment_persister$TF=="FOXQ1")], split = ",")))
+targets_ChEA3_NR2F2 = unique(unlist(strsplit(ChEA3_TF_enrichment_persister$Overlapping_Genes[which(ChEA3_TF_enrichment_persister$TF=="NR2F2")], split = ",")))
+
+mat[targets_ChEA3_FOSL1,1] = 1
+mat[targets_ChEA3_FOXQ1,2] = 1
+mat[targets_ChEA3_NR2F2,3] = 1
+
+png(file.path(output,"heatmap_3_TF_MM468.png"), res = 300, width = 1500, height = 1800)
+heatmap.2(mat,cexRow = 0.25,cexCol = 1, col = my_palette <- colorRampPalette(c("white", "white", "blue"))(n = 1000),
+          density.info="none", trace="none", dendrogram=c("row"), 
+          symm=F,symkey=T,symbreaks=T, scale="none")
+dev.off()
+
+pdf(file.path(output,"heatmap_3_TF_MM468.pdf"))
+heatmap.2(mat,cexRow = 0.25,cexCol = 1, col = my_palette <- colorRampPalette(c("white", "white", "blue"))(n = 1000),
+          density.info="none", trace="none", dendrogram=c("row"), 
+          symm=F,symkey=T,symbreaks=T, scale="none")
+dev.off()
+
+# regulons_SCENIC = readRDS("/media/pprompsy//Depic_bioinfo_1/InstitutCurie/Documents/Data/results/SCENIC_ChemoPersistence/MM468/int/2.6_regulons_asGeneSet.Rds")
+# persister_genes_MM468 = persister_DA_MM468$Symbol[which(persister_DA_MM468$log2FC.C2_pers>log2(3) & persister_DA_MM468$qval.C2_pers <0.1)]
+# additional_FOSL1 = setdiff(intersect(persister_genes_MM468, regulons_SCENIC$FOSL1), targets_ChEA3_FOSL1)
+# additional_FOXQ1 = setdiff(intersect(persister_genes_MM468, regulons_SCENIC$FOXQ1), targets_ChEA3_FOXQ1)
+# additional_NR2F2 = setdiff(intersect(persister_genes_MM468, regulons_SCENIC$NR2F2_extended), targets_ChEA3_NR2F2)
+# 
+# mat_2 = mat
+# mat_2[additional_FOSL1,1] = 1
+# mat_2[additional_NR2F2,3] = 1
+# png("output/scRNAseq/MM468/heatmap_3_TF_MM468_with_SCENIC_regulons.png", res = 300, width = 1500, height = 1800)
+# heatmap.2(mat_2,cexRow = 0.25,cexCol = 1, col = my_palette <- colorRampPalette(c("white", "white", "blue"))(n = 1000),
+#           density.info="none", trace="none", dendrogram=c("row"), 
+#           symm=F,symkey=T,symbreaks=T, scale="none")
+# dev.off()
+# 
+# TF_networks_SCENIC = readRDS("/media/pacome/Depic_bioinfo_1/InstitutCurie/Documents/Data/results/SCENIC_ChemoPersistence/MM468/int/1.6_tfModules_asDF.Rds")
+# TF_networks_SCENIC = TF_networks_SCENIC[grep("top", TF_networks_SCENIC$method),]
+# TF_networks_SCENIC = TF_networks_SCENIC[which(TF_networks_SCENIC$corr ==1),]
+# 
+# additional_FOSL1 = setdiff(intersect(persister_genes_MM468,
+#                                      TF_networks_SCENIC$Target[which(TF_networks_SCENIC$TF == "FOSL1")]), targets_ChEA3_FOSL1)
+# additional_FOXQ1 = setdiff(intersect(persister_genes_MM468,
+#                                      TF_networks_SCENIC$Target[which(TF_networks_SCENIC$TF == "FOXQ1")]), targets_ChEA3_FOXQ1)
+# additional_NR2F2 = setdiff(intersect(persister_genes_MM468,
+#                                      TF_networks_SCENIC$Target[which(TF_networks_SCENIC$TF == "NR2F2")]), targets_ChEA3_NR2F2)
+# 
+# mat_3 = mat
+# mat_3[additional_FOSL1,1] = 1
+# mat_3[additional_FOXQ1,2] = 1
+# mat_3[additional_NR2F2,3] = 1
+
+# png("output/scRNAseq/MM468/heatmap_3_TF_MM468_with_SCENIC_networks.png", res = 300, width = 1500, height = 1800)
+# ord = heatmap.2(mat_3, Colv = FALSE, cexRow = 0.25,cexCol = 1, col = my_palette <- colorRampPalette(c("white", "white", "blue"))(n = 1000),
+#                 density.info="none", trace="none", dendrogram=c("row"), 
+#                 symm=F,symkey=T,symbreaks=T, scale="none")
+# dev.off()
+# 
+# SCENIC_FOSL1 = (intersect(persister_genes_MM468,
+#                           TF_networks_SCENIC$Target[which(TF_networks_SCENIC$TF == "FOSL1")]))
+# SCENIC_FOXQ1 = (intersect(persister_genes_MM468,
+#                           TF_networks_SCENIC$Target[which(TF_networks_SCENIC$TF == "FOXQ1")]))
+# SCENIC_NR2F2 = (intersect(persister_genes_MM468,
+#                           TF_networks_SCENIC$Target[which(TF_networks_SCENIC$TF == "NR2F2")]))
+# mat_4 = mat
+# mat_4[SCENIC_FOSL1,1] = 2
+# mat_4[SCENIC_FOXQ1,2] =  2
+# mat_4[SCENIC_NR2F2,3] =  2
+# 
+# int_Chea3_SCENIC_FOSL1 = intersect(SCENIC_FOSL1, targets_ChEA3_FOSL1)
+# int_Chea3_SCENIC_FOXQ1 = intersect(SCENIC_FOXQ1, targets_ChEA3_FOXQ1)
+# int_Chea3_SCENIC_NR2F2 = intersect(SCENIC_NR2F2, targets_ChEA3_NR2F2)
+# 
+# mat_4[int_Chea3_SCENIC_FOSL1,1] = 3
+# mat_4[int_Chea3_SCENIC_FOXQ1,2] =  3
+# mat_4[int_Chea3_SCENIC_NR2F2,3] =  3
+# 
+# png("output/scRNAseq/MM468/heatmap_3_TF_MM468_with_SCENIC_networks_colored.png", res = 300, width = 1500, height = 1800)
+# heatmap.2(mat_4[rev(ord$rowInd),], Rowv = F, cexRow = 0.25, cexCol = 1, col = c("white","white","white",c("#D46565", "#5269B3", "#A761B3")),
+#           density.info = "none", trace = "none", dendrogram = c("none"),  
+#           symm=F, symkey=T, symbreaks=T, scale="none")
+# dev.off()

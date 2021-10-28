@@ -1,3 +1,163 @@
+geco.hclustAnnotHeatmapPlot.withColumn <- function (
+    x = NULL, hc = NULL, hc_row = NULL, hmColors = NULL, 
+    anocol = NULL, anorow = NULL, xpos = c(0.375, 0.9, 0.3745, 0.885, 0.05, 0.25),
+    ypos = c(0.1, 0.5, 0.5, 0.6, 0.62, 0.95),
+    dendro.cex = 1, xlab.cex = 0.8, 
+    hmRowNames = FALSE, hmRowNames.cex = 0.5, 
+    hmColNames = FALSE, hmColNames.cex = 0.5,
+    hmCategNamesRows = FALSE, hmCategNamesRows.cex = 0.5) 
+{
+    par(fig = c(xpos[1], xpos[2], ypos[5], ypos[6]), new = FALSE, 
+        mar = c(0, 0, 1.5, 0))
+    plot(hc, main = "", sub = "", las = 2, cex = dendro.cex, cex.axis = dendro.cex)
+    par(fig = c(xpos[3], xpos[4], ypos[3], ypos[4]), new = TRUE, 
+        mar = rep(0, 4))
+    geco.imageCol(anocol, xlab.cex = xlab.cex, ylab.cex = 0)
+    if (hmColNames) {
+        axis(side = 3, padj = 0.5, hadj = 0.5,
+             lwd = 0, at = seq(0, 1, length.out = ncol(x)), 
+             labels = colnames(x), las = 2, cex.axis = hmColNames.cex)
+    }
+    par(fig = c(xpos[3], xpos[4], ypos[1], ypos[2]), new = TRUE, 
+        mar = rep(0, 4))
+    image(t(x), axes = FALSE, xlab = "", ylab = "", col = hmColors)
+    par(fig = c(xpos[5], xpos[6], ypos[1] - 0.015, ypos[3] + 
+                    0.015), new = TRUE, mar = c(0, 0, 0, 0))
+    plot(as.phylo(hc_row), main = "", sub = "", las = 2, cex = dendro.cex, cex.axis = dendro.cex)
+    par(fig = c(xpos[6] + 0.015, xpos[1], ypos[1], ypos[3]), 
+        new = TRUE, mar = rep(0, 4))
+    geco.imageCol(t(anorow)[, dim(anorow)[1]:1], xlab.cex = 0, 
+                  ylab.cex = 0)
+    box()
+    if (hmRowNames) {
+        axis(2, hadj = 0.1, lwd = 0, at = seq(0, 1, length.out = nrow(x)), 
+             labels = rownames(x), las = 1, cex.axis = hmRowNames.cex)
+    }
+    if (hmCategNamesRows) {
+        axis(1, hadj = 0.75, lwd = 0, at = seq(0, 1, length.out = ncol(anorow)), 
+             labels = colnames(anorow), las = 2, cex.axis = hmCategNamesRows.cex)
+    }
+    
+}
+
+enrich_for_TF_ChEA3 <- function(genes_of_interest, n_random = 100, all_genes = unique(toTable(org.Hs.eg.db::org.Hs.egSYMBOL)[,2])){
+    url = "https://maayanlab.cloud/chea3/api/enrich/"
+    encode = "json"
+    
+    list_TF_enrichment = list()
+    for(i in seq_len(n_random+1)){
+        if(i != 1){
+            genes = sample(all_genes, length(genes_of_interest))
+        } else{
+            genes = genes_of_interest
+        }
+        
+        #POST to ChEA3 server
+       
+        httr::set_config(config(ssl_verifypeer = 0L))
+        url = "https://maayanlab.cloud/chea3/api/enrich/"
+        encode = "json"
+        payload = list(query_name = "myQuery", gene_set = genes)
+        
+        #POST to ChEA3 server
+        response = POST(url = url, body = payload, encode = encode)
+        json = content(response, "text")
+        
+        #results as list of R dataframes
+        results = fromJSON(json)
+        
+        #results as list of R dataframes
+        list_TF_enrichment[[i]] = results$`Integrated--meanRank`
+        
+        if(i %% 10 == 0){cat("Done - ", i ," / ", n_random, ".\n")}
+    }
+    names(list_TF_enrichment) = c("Genes_of_interest", paste0("random_genes_",seq_len(n_random)))
+    return(list_TF_enrichment)
+}
+
+
+TF.IDF.custom <- function(data, scale = 10000, log = TRUE, verbose = TRUE) {
+    if (class(x = data) == "data.frame") {
+        data <- as.matrix(x = data)
+    }
+    if (class(x = data) != "dgCMatrix") {
+        data <- as(object = data, Class = "dgCMatrix")
+    }
+    if (verbose) {
+        message("Performing TF-IDF normalization")
+    }
+    npeaks <- Matrix::colSums(x = data)
+    tf <- t(x = t(x = data) / npeaks)
+    # log transformation
+    idf <- 1+ ncol(x = data) / Matrix::rowSums(x = data)
+    norm.data <- Matrix::Diagonal(n = length(x = idf), x = idf) %*% tf
+    if(log) norm.data = log1p(norm.data * scale) else norm.data = 
+        norm.data * scale
+    return(norm.data)
+}
+
+
+dice. = function (x, y) {
+    M.11 = sum(x == 1 & y == 1)
+    M.10 = sum(x == 1 & y == 0)
+    M.01 = sum(x == 0 & y == 1)
+    return (2*M.11 / (2*M.11 + M.10 + M.01))
+}
+
+dice <- function(m){
+    dice_mat = matrix(0,ncol = nrow(m), nrow= nrow(m),
+                      dimnames = list(rownames(m),
+                                      rownames(m))) 
+    for(row in 1:nrow(m)){
+        for(col in 1:nrow(m)){
+            dice_mat[row,col] = dice.(m[row,],m[col,])
+        }
+    }
+    return(dice_mat)
+}
+
+jaccard. = function (x, y) {
+    M.11 = sum(x == 1 & y == 1)
+    M.10 = sum(x == 1 & y == 0)
+    M.01 = sum(x == 0 & y == 1)
+    return (M.11 / (M.11 + M.10 + M.01))
+}
+
+jaccard <- function(m){
+    jac_mat = matrix(0,ncol = nrow(m), nrow= nrow(m),
+                     dimnames = list(rownames(m),
+                                     rownames(m))) 
+    for(row in 1:nrow(m)){
+        for(col in 1:nrow(m)){
+            jac_mat[row,col] = jaccard.(m[row,],m[col,])
+        }
+    }
+    return(jac_mat)
+}
+
+find_clusters_louvain_scExp <- function(scExp, k =100){
+    g = scran::buildSNNGraph(scExp, k=k, use.dimred = 'UMAP')
+    clust <- igraph::cluster_louvain(g)$membership
+    clust
+    cell_clusters = paste0("C",clust)
+    cell_clusters = as.factor(cell_clusters)
+    return(cell_clusters)
+}
+
+find_clusters_louvain = function(reduced_dim, k =100){
+    ncells <- nrow(reduced_dim)
+    u <- matrix(rpois(100*ncells, 5), ncol=ncells)
+    sce <- SingleCellExperiment(assays=list(counts=u),
+                                reducedDims=SimpleList(UMAP=as.matrix(reduced_dim) ))
+    g = buildSNNGraph(sce, k=k, use.dimred = 'UMAP')
+    clust <- igraph::cluster_louvain(g)$membership
+    clust
+    cell_clusters = paste0("C",clust)
+    cell_clusters = as.factor(cell_clusters)
+    return(cell_clusters)
+}
+
+
 import_scExp_gz <- function(datadir, pattern){
     files = list.files(datadir, pattern = pattern, full.names = TRUE)
     dir.create(file.path(datadir,"tmp"))
@@ -11,12 +171,12 @@ import_scExp_gz <- function(datadir, pattern){
 }
 
 plot_reduced_dim_scExp_devel <- function(scExp, color_by = "sample_id", reduced_dim = c("PCA", 
-                                                                                  "TSNE", "UMAP"),
-                                   select_x = "Component_1",
-                                   select_y = "Component_2",
-                                   downsample = 5000,
-                                   transparency = 0.6,
-                                   size = 1)
+                                                                                        "TSNE", "UMAP"),
+                                         select_x = "Component_1",
+                                         select_y = "Component_2",
+                                         downsample = 5000,
+                                         transparency = 0.6,
+                                         size = 1)
 {
     
     stopifnot(is(scExp, "SingleCellExperiment"), is.character(color_by), is.character(reduced_dim), 
@@ -82,144 +242,11 @@ makeAttr <- function(graph, default, valNodeList) {
     return(x)
 }
 
-#' Get an Igraph from a given KEGG pathway
-#'
-#' @param KEGG_pathway_id 
-#' @param plot 
-#' @param plot_file 
-#'
-#' @return
-#' @export
-#'
-#' @examples
-GetKEGGigraph <- function(KEGG_pathway_id, plot = FALSE, plot_file=NULL){
-    stopifnot(is.character(KEGG_pathway_id))
-    
-    # retrieve pathway thanks to KEGGgraph
-    tmp <- tempfile()
-    res = KEGGgraph::retrieveKGML(KEGG_pathway_id, organism="hsa", destfile=tmp, method="wget", quiet=TRUE)
-    mapkG <- KEGGgraph::parseKGML2Graph(res,expandGenes=TRUE, genesOnly = TRUE)
-    
-    outs <- sapply(KEGGgraph::edges(mapkG), length) > 0
-    ins <- sapply(KEGGgraph::inEdges(mapkG), length) > 0
-    ios <- outs | ins
-    ## translate the KEGG IDs into Gene Symbol
-    if(require(org.Hs.eg.db)) {
-        ioGeneID <- KEGGgraph::translateKEGGID2GeneID(names(ios))
-        nodesNames <- sapply(mget(ioGeneID, org.Hs.egSYMBOL, ifnotfound=NA), "[[",1)
-    } else {
-        nodesNames <- names(ios)
-    }
-    names(nodesNames) <- names(ios)
-    
-    mapkG_igraph = igraph::igraph.from.graphNEL(mapkG, name = TRUE, weight = TRUE,
-                                        unlist.attrs = TRUE)
-    mapkG_igraph = igraph::simplify(mapkG_igraph, remove.multiple = TRUE, remove.loops = TRUE,
-                            edge.attr.comb = igraph::igraph_opt("edge.attr.comb"))
-    Isolated = which(igraph::degree(mapkG_igraph)==0)
-    mapkG_igraph = igraph::delete.vertices(mapkG_igraph, Isolated)
-    
-    # Minimum spanning tree graph from pathway
-    mstree = igraph::mst(mapkG_igraph)
-    V(mstree)$id <- seq_len(vcount(mstree))-1
-    roots <- sapply(igraph::decompose(mstree), function(x) {
-        V(x)$id[ igraph::topo_sort(x)[1]+1 ] })
-    
-    if(plot & !is.null(plot_file)){
-        # Change names to gene name for graph
-        mapkG@nodes = nodesNames
-        names(mapkG@edgeL) = nodesNames
-        
-        mapkG_igraph_gene = igraph::igraph.from.graphNEL(mapkG, name = TRUE, weight = TRUE,
-                                                 unlist.attrs = TRUE)
-        mapkG_igraph_gene = igraph::simplify(mapkG_igraph_gene, remove.multiple = TRUE, remove.loops = TRUE,
-                                edge.attr.comb = igraph::igraph_opt("edge.attr.comb"))
-        Isolated = which(igraph::degree(mapkG_igraph_gene)==0)
-        mapkG_igraph_gene = igraph::delete.vertices(mapkG_igraph_gene, Isolated)
-        
-        # Minimum spanning tree graph from pathway
-        mstree_gene = igraph::mst(mapkG_igraph_gene)
-        pdf(file.path(plot_file))
-        plot(mstree_gene, layout = igraph::layout_nicely(mstree_gene),
-             vertex.color= ifelse(,"red","grey"), vertex.size = 3.75,
-             vertex.label.cex=0.25, edge.arrow.width=0.25, edge.arrow.size=0.25, edge.width=0.5)
-        dev.off()
-
-    }
-    
-    return(mstree)
+show_in_excel <- function(.data){
+    tmp <- paste0(tempfile(),".csv")
+    write.csv(.data, tmp)
+    fs::file_show(path = tmp)
 }
-
-#' For each gene in a given list, returns the 'upstream score'
-#'
-#' @param gene_list 
-#'
-#' @return
-#' @export
-#'
-#' @examples
-upstream_score_KEGG <- function(gene_list){
-    ##Get the Entrez gene IDs associated with those symbols
-    EG_IDs = mget(gene_list, revmap(org.Hs.egSYMBOL),ifnotfound=NA)
-    
-    ##Then get the KEGG IDs associated with those entrez genes.
-    KEGG_IDs = mget(as.character(EG_IDs), org.Hs.egPATH,ifnotfound=NA)
-    
-    results <- foreach::foreach(KEGG_id = names(KEGG_IDs), .combine=rbind,
-                                .packages=c('KEGGREST',"KEGGgraph",'igraph')) %dopar% 
-        {
-        # results=data.frame("upstream_score"=0,"KEGG_id"="")
-         # for(KEGG_id in names(KEGG_IDs)) {
-            KEGG_pathway_id = KEGG_IDs[[KEGG_id]]
-            print(KEGG_id)
-            if(is.na(KEGG_pathway_id[1])) {
-                ret = data.frame("upstream_score"=NA, "KEGG_id"=KEGG_id)
-                return(ret)
-                # results = rbind(results,ret)
-            } else {
-                list_topo_sorted <- lapply(KEGG_pathway_id, function(id){
-                    mstree_sorted <- data.frame("upstream_score"=0,"KEGG_id"="")
-                     try({
-                        mstree <- GetKEGGigraph(id, plot=FALSE)
-                        mstree_sorted <- igraph::as_ids(igraph::topo_sort(mstree))
-                        }, TRUE)
-                    
-                    return(mstree_sorted)
-                })
-                names(list_topo_sorted) <- paste0(KEGG_id,"_",KEGG_pathway_id)
-                list_topo_sorted = lapply(list_topo_sorted, function(x){
-                    n = 1 - (which(x==paste0("hsa:",KEGG_id))/length(x))
-                    if(length(n)==0) return(NA) else return(n[1])
-                } )
-                df_topo_sorted = as.data.frame(t(as.data.frame(list_topo_sorted,drop=F)))
-                df_topo_sorted$KEGG_id = rep(KEGG_id,nrow(df_topo_sorted))
-                colnames(df_topo_sorted)[1] = "upstream_score"
-                if(!is.null(df_topo_sorted)) return(df_topo_sorted)
-                # if(!is.null(df_topo_sorted)) results=rbind(results,df_topo_sorted)
-            }
-
-        }
-    results$KEGG_pathway = rownames(results)
-    results$KEGG_pathway[grep("_",results$KEGG_pathway,invert = T)] = NA
-    results$KEGG_pathway = gsub(".*_","",results$KEGG_pathway)
-    
-    results$Gene = sapply(mget(results$KEGG_id, org.Hs.egSYMBOL, ifnotfound=NA), "[[",1)
-    results$Pathway = ""
-    
-    l = sapply(paste0("path:hsa",results$KEGG_pathway[which(!is.na(results$KEGG_pathway))]),function(x){
-        print(x)
-        ret = ""
-        try({
-            query = keggGet(x)
-            ret = query[[1]]$PATHWAY_MAP
-        }, TRUE)
-        return(ret)
-        })
-    results$Pathway[which(!is.na(results$KEGG_pathway))] = l
-    return(results)
-}
-
-
 
 VennDiagram_3 <- function(genesSet1, genesSet2,genesSet3,  savePNG=F,png_title,title,groups) {
     genesSet1  = as.vector(genesSet1)

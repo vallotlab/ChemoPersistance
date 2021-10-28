@@ -1,0 +1,911 @@
+---
+title: "Running SCENIC"
+subtitle: SCENIC (Single Cell rEgulatory Network Inference and Clustering)
+output:
+  html_document:
+    number_sections: no
+    toc: yes
+    toc_float: yes
+    css: corrected.css
+    results: hold
+  html_notebook:
+    toc: yes
+  pdf_document:
+    toc: yes
+bibliography: references.bib
+vignette: >
+  %\VignetteIndexEntry{Running SCENIC} 
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown} 
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+# Suppress loading messages when building the HTML
+suppressPackageStartupMessages({
+  library(SCENIC)
+  library(AUCell)
+  library(RcisTarget)
+  library(SCopeLoomR)
+  library(KernSmooth)
+  library(BiocParallel)
+  library(ggplot2)
+  library(data.table)
+  library(grid)
+  library(ComplexHeatmap)
+})
+
+options(width=200)
+
+# To build a personalized report, update this working directory:
+knitr::opts_knit$set(root.dir="../../../../") 
+
+maindir = "~/Insync/pacome.pr@gmail.com/Google Drive - Shared with me/DEpic_bioinfo/ChemoPersistance/"
+library(here)
+source(file.path(maindir,"Scripts","global_var.R"))
+
+QCdir <- file.path(maindir,"output","scRNAseq","MM468","QC")
+resdir <- file.path(maindir,"output","scRNAseq","MM468","Persister")
+resSUBdir <- file.path(resdir, paste0("ComparisonChIPseq")) ;if(!file.exists(resSUBdir)){dir.create(resSUBdir)}
+resSUBdir_K27 <- file.path(resSUBdir, paste0("K27")) ;if(!file.exists(resSUBdir_K27)){dir.create(resSUBdir_K27)}
+resSUBdir_K4 <- file.path(resSUBdir, paste0("K4")) ;if(!file.exists(resSUBdir_K4)){dir.create(resSUBdir_K4)}
+rdatadir <- file.path(resdir, "Supervised","RData")
+output = file.path(resdir, "SCENIC"); if(!dir.exists(output)) dir.create(output)
+```
+
+*Vignette built on `r format(Sys.time(), "%b %d, %Y")` with SCENIC **version `r packageVersion("SCENIC")`***.
+
+# SCENIC workflow
+
+This tutorial goes through the steps in the **SCENIC workflow**:
+
+Building the **gene regulatory network (GRN)**: 
+
+1. Identify potential targets for each TF based on co-expression.
+- Filtering the expression matrix and running GENIE3/GRNBoost. 
+- Formatting the targets from GENIE3/GRNBoost into co-expression modules. 
+
+2.  Select potential direct-binding targets (regulons) based on DNA-motif analysis (*RcisTarget*: TF motif analysis) 
+
+Identify **cell states** and their regulators:
+
+3. Analyzing the network activity in each individual cell (*AUCell*)
+- Scoring regulons in the cells (calculate AUC)
+- Optional: Convert the network activity into ON/OFF (binary activity matrix)
+
+4. Identify stable cell states based on their gene regulatory network activity (cell clustering) and exploring the results...
+
+To start this tutorial you should have read the "Introduction and setup" vignette (`vignette("SCENIC_Setup")`) and run the setup steps.
+
+## Command list
+
+This is an overview of the main commands used to run the SCENIC workflow.
+(To be used as cheatsheet or template, it is not exhaustive). 
+The commands are explained in the following sections.
+
+```{r eval=FALSE}
+### Load data
+load(file.path(resdir,"Unsupervised","RData","MM468.RData"))
+
+exprMat <- Signal
+cellInfo <- annot
+
+cellInfo = cellInfo[which(cellInfo$sample_id %in% c("MM468_initial","MM468_5FU6_day33")),]
+
+# Subsample to 300 each
+set.seed(47)
+cells = c(sample(which(cellInfo$sample_id == "MM468_initial"),300), sample(which(cellInfo$sample_id == "MM468_5FU6_day33"),300))
+cellInfo = cellInfo[cells,]
+exprMat = exprMat[,match(cellInfo$cell_id, colnames(exprMat))]
+rm(Signal)
+gc()
+
+exprMat = as.matrix(exprMat)
+gc()
+
+### Initialize settings
+library(SCENIC)
+db_names = setNames(c("hg38__refseq-r80__10kb_up_and_down_tss.mc9nr.feather","hg38__refseq-r80__500bp_up_and_100bp_down_tss.mc9nr.feather"), c("500bp","10kbp"))
+scenicOptions <- initializeScenic(org="hgnc", dbDir=file.path(maindir,"annotation","CisTarget"), 
+                                  dbs = db_names, nCores=6)
+
+scenicOptions@inputDatasetInfo$cellInfo <- "int/cellInfo.Rds"
+saveRDS(scenicOptions, file= file.path("int/scenicOptions.Rds"))
+saveRDS(cellInfo, file= file.path("int/cellInfo.Rds"))
+
+scenicOptions = readRDS("int/scenicOptions.Rds")
+cellInfo = readRDS("int/cellInfo.Rds")
+
+
+### Co-expression network
+genesKept <- geneFiltering(as.matrix(exprMat), scenicOptions)
+exprMat_filtered <- exprMat[genesKept, ]
+gc()
+runCorrelation(exprMat_filtered, scenicOptions)
+gc()
+exprMat_filtered_log <- log2(exprMat_filtered+1) 
+gc()
+
+exportsForArboreto(exprMat_filtered, scenicOptions, dir = "int")
+
+# Use command line to run python 3.6 pyscenic on the matrix (must be .csv file ) & TF list
+# pyscenic grn int/1.1_exprMatrix_filtered_t.csv int/1.1_inputTFs.txt -o int/grn_output.csv
+
+# If using GENIE3
+# system.time({runGenie3(exprMat_filtered_log, scenicOptions)})
+genie_output = read.csv("int/grn_output.csv")
+head(genie_output)
+colnames(genie_output) = c("TF", "Target", "weight")
+# Format output to GENIE3 output equivalent:
+saveRDS(genie_output, file = "int/1.4_GENIE3_linkList.Rds")
+
+### Build and score the GRN
+exprMat_log <- log2(exprMat+1)
+
+scenicOptions@settings$nCores = 4
+system.time({scenicOptions <- runSCENIC_1_coexNetwork2modules(scenicOptions)})
+system.time({scenicOptions <- runSCENIC_2_createRegulons(scenicOptions)})
+scenicOptions@settings$nCores = 1
+system.time({scenicOptions <- runSCENIC_3_scoreCells(scenicOptions, as.matrix(exprMat_log))})
+
+# Optional: Binarize activity
+# aucellApp <- plotTsne_AUCellApp(scenicOptions, exprMat_log)
+# savedSelections <- shiny::runApp(aucellApp)
+# newThresholds <- savedSelections$thresholds
+# scenicOptions@fileNames$int["aucell_thresholds",1] <- "int/newThresholds.Rds"
+# saveRDS(newThresholds, file=getIntName(scenicOptions, "aucell_thresholds"))
+
+scenicOptions <- runSCENIC_4_aucell_binarize(scenicOptions)
+tsneAUC(scenicOptions, aucType="AUC") # choose settings
+
+# Export:
+# saveRDS(cellInfo, file=getDatasetInfo(scenicOptions, "cellInfo")) # Temporary, to add to loom
+export2loom(scenicOptions, exprMat)
+
+# To save the current status, or any changes in settings, save the object again:
+saveRDS(scenicOptions, file="int/scenicOptions.Rds") 
+
+
+# Cell-type specific regulators (RSS): 
+library(AUCell)
+regulonAUC <- loadInt(scenicOptions, "aucell_regulonAUC")
+rss <- calcRSS(AUC=getAUC(regulonAUC), cellAnnotation=cellInfo[, "sample_id"])
+rssPlot <- plotRSS(rss)
+
+rssPlot$plot$data
+regulonAUC_UNC <- readRDS("/media/pacome/Depic_bioinfo_1/InstitutCurie/Documents/Data/results/SCENIC_ChemoPersistence/MM468_UNC/int/3.4_regulonAUC.Rds")
+cellInfo_UNC <- readRDS("/media/pacome/Depic_bioinfo_1/InstitutCurie/Documents/Data/results/SCENIC_ChemoPersistence/MM468_UNC/int/cellInfo.Rds")
+rss_UNC <- calcRSS(AUC=getAUC(regulonAUC_UNC), cellAnnotation=cellInfo_UNC[, "sample_id"])
+rssPlot_UNC <- plotRSS(rss_UNC)
+rssPlot_UNC$df
+
+rss_combined = rbind(rssPlot$df, rssPlot_UNC$df)
+rss_combined = rss_combined %>% dplyr::filter(cellType != "MM468_initial")
+rss_combined$Gene_name = gsub(" .*","",rss_combined$Topic)
+
+rss_combined = rss_combined %>% group_by(Gene_name) %>% mutate(mean_Z = mean(Z),
+                                                               occurence = n())
+rss_combined$Gene_name = forcats::fct_reorder(rss_combined$Gene_name,
+                                              rss_combined$mean_Z, .desc = T)
+rss_combined = rss_combined %>% filter(occurence >1)
+
+library(dplyr)
+library(ggplot2)
+colorPal <- grDevices::colorRampPalette(c("grey90","darkolivegreen3", "darkgreen"))  
+
+png(file.path(output,"RSS_combined_MM468_persister_and_UNC.png"),width = 1500, height = 1500,
+    res = 300) 
+rss_combined %>% ggplot(aes(y = Gene_name, x = cellType)) +
+  geom_point(mapping = aes(size = RSS, color = Z)) + theme_bw() +
+  scale_radius(range = c(2, 5)) + scale_colour_gradientn(colors = colorPal(10)) +
+  xlab("")
+dev.off()
+
+png(file.path(output,"RSS_combined_MM468_persister_and_UNC_clear.png"),width = 1200, height = 1500,
+    res = 300) 
+rss_combined %>% ggplot(aes(y = Gene_name, x = cellType)) +
+  geom_point(mapping = aes(size = RSS, color = Z)) + theme_bw() +
+  scale_radius(range = c(2, 5)) + scale_colour_gradientn(colors = colorPal(10)) +
+  xlab("") + theme(text=element_blank())
+dev.off()
+
+MotifEnrichment = read.table("output/Step2_MotifEnrichment.tsv", sep = "\t", header = TRUE)
+TFs = levels(rssPlot$plot$data$Topic)
+TFs = TFs[which(TFs %in% as.character(rssPlot$plot$data$Topic))]
+for(TF in TFs){
+  TF_name = gsub("_extended","",TF)
+  is_extended = grepl("_extended",TF)
+  MotifEnrichment_TF = MotifEnrichment %>% filter(highlightedTFs == TF_name)
+  if(is_extended){
+    n = length(unique(unlist(str_split(MotifEnrichment_TF$enrichedGenes, pattern = ";"))))
+  } else{
+    n = length(unique(unlist(str_split(MotifEnrichment_TF$enrichedGenes[grep(TF_name, MotifEnrichment_TF$TF_highConf)], pattern = ";"))))
+  }
+  TFs[which(TFs == TF)] = paste0(TF, " (",n,"g)")
+}
+TFs_factor = (TFs[match(rssPlot$plot$data$Topic, gsub(" .*", "", TFs))])
+
+TFs_factor = factor(TFs_factor, levels = TFs) 
+levels(TFs_factor) = TFs
+
+TFs_factor = TFs[match(rssPlot$plot$data$Topic, gsub(" .*", "", TFs))]
+
+rssPlot$plot$data$Topic = TFs_factor
+
+plotly::ggplotly(rssPlot$plot)
+
+pdf(file.path(output,"GRNs_persister_barplot.pdf"))
+rssPlot$df[!grepl("_extended",rssPlot$df$Topic),] %>% filter(cellType != "MM468_initial") %>%
+  ggplot(aes(x=Topic, y= Z)) + geom_bar(fill = "#009688", stat="identity") +
+  theme_classic() + theme(axis.text.x = element_text(size = 15, angle=90)) + xlab("")
+dev.off()
+
+pdf(file.path(output,"MM468_rssPlot.pdf"))
+rssPlot$plot
+dev.off()
+
+for(i in list.files("int/",pattern = ".Rds", full.names = T)) readRDS(i)
+
+par(mfrow=c(length(nPcs), 3))
+fileNames <- paste0("int/", grep(".Rds", grep("tSNE_AUC", list.files("int"), value=T, perl = T), value=T))
+plotTsne_compareSettings(fileNames, scenicOptions, showLegend=FALSE, cex=.5)
+
+TSNE = readRDS(fileNames)
+# Using only "high-confidence" regulons (normally similar)
+plot(TSNE$Y[,1:2], col = ifelse("#C7C5C5",))c(, "#2B8C4C")
+
+aucellApp <- plotTsne_AUCellApp(scenicOptions, exprMat_log)
+savedSelections <- shiny::runApp(aucellApp)
+
+```
+
+
+
+```{r}
+nCores <- getSettings(scenicOptions, "nCores")
+regulonAUC <- loadInt(scenicOptions, "aucell_regulonAUC")
+thresholds <- loadInt(scenicOptions, "aucell_thresholds")
+thresholds <- getThresholdSelected(thresholds)
+# Assign cells
+regulonsCells <- setNames(lapply(names(thresholds), 
+                                 function(x) {
+                                   trh <- thresholds[x]
+                                   names(which(getAUC(regulonAUC)[x,]>trh))
+                                 }),names(thresholds))
+### Convert to matrix (regulons with zero assigned cells are lost)
+regulonActivity <- reshape2::melt(regulonsCells)
+binaryRegulonActivity <- t(table(regulonActivity[,1], regulonActivity[,2]))
+class(binaryRegulonActivity) <- "matrix"
+saveRDS(binaryRegulonActivity, file=getIntName(scenicOptions, "aucell_binary_full"))
+
+# Alternative version: Keep only non-duplicated thresholds
+binaryRegulonActivity_nonDupl <- binaryRegulonActivity[which(rownames(binaryRegulonActivity) %in% onlyNonDuplicatedExtended(rownames(binaryRegulonActivity))),]
+saveRDS(binaryRegulonActivity_nonDupl, file=getIntName(scenicOptions, "aucell_binary_nonDupl"))
+
+skipHeatmaps = FALSE
+if(!skipHeatmaps)
+{
+  regulonSelection <- loadInt(scenicOptions, "aucell_regulonSelection", ifNotExists="null", verbose=FALSE)
+  if(is.null(regulonSelection)) 
+    regulonSelection <- regulonSelections(binaryRegulonActivity, binaryRegulonActivity_nonDupl, minCells)
+  
+  cellInfo <- loadFile(scenicOptions, getDatasetInfo(scenicOptions, "cellInfo"), ifNotExists="null")
+  cellInfo <- data.frame(cellInfo)
+  colVars <- loadFile(scenicOptions, getDatasetInfo(scenicOptions, "colVars"), ifNotExists="null")
+  
+  
+  ### Plot heatmap:
+  for(selRegs in names(regulonSelection$labels))
+  {
+    if(length(regulonSelection[[selRegs]])>1)
+    {
+      regulonSelection[[selRegs]] <- regulonSelection[[selRegs]][which(regulonSelection[[selRegs]] %in% rownames(binaryRegulonActivity))]
+      binaryMat <- binaryRegulonActivity[regulonSelection[[selRegs]],,drop=FALSE]
+      
+      fileName <- paste0(getOutName(scenicOptions, "s4_binaryActivityHeatmap"),selRegs)
+      
+      fileName <- SCENIC:::.openDevHeatmap(fileName=fileName, devType=getSettings(scenicOptions, "devType"))
+      pdf(fileName)
+      heatmap(binaryMat, ColSideColors = ifelse(grepl("initial",colnames(binaryMat)), "#DEDADA", "#1A7A77"), col=c("white","black"), cexRow = 0.2)
+      dev.off()
+    }
+  }
+}  
+
+
+tSNE_fileName <- tsneAUC(scenicOptions, aucType="AUC", onlyHighConf=FALSE) # default: nPcs, perpl, seed, tsne prefix
+tSNE <- readRDS(tSNE_fileName)
+
+# AUCell (activity) plots with the default tsne, as html: 
+fileName <- getOutName(scenicOptions, "s3_AUCtSNE_colAct")
+AUCell::plotTsne_regulonActivityHTML(scenicOptions, exprMat, fileName, tSNE) #open the resulting html locally
+# Plot cell properties:
+sub <- ""; if("type" %in% names(tSNE)) sub <- paste0("t-SNE on ", tSNE$type)
+cellInfo <- loadFile(scenicOptions, getDatasetInfo(scenicOptions, "cellInfo"), ifNotExists="null") 
+colVars <- loadFile(scenicOptions, getDatasetInfo(scenicOptions, "colVars"), ifNotExists="null")
+pdf(paste0(getOutName(scenicOptions, "s3_AUCtSNE_colProps"),".pdf"))
+plotTsne_cellProps(tSNE$Y, cellInfo=cellInfo, colVars=colVars, cex=1, sub=sub)
+dev.off()
+```
+## Comparison with persister genes
+
+```{r altTsnes, eval=FALSE}
+
+# Retrieve FOS & FOSL1 targets, as found by SCENIC
+TF_genes = read.table("/media/pacome/Depic_bioinfo_1/InstitutCurie/Documents/Data/results/SCENIC_ChemoPersistence/MM468/output/Step2_regulonTargetsInfo.tsv", header = TRUE)
+
+TF_persister_regulons = TF_genes %>% filter(TF %in% c("FOSL1","OSR2","MAFG","ING3","RUNX1","RELB"))
+
+# Retrieve Bivalent & Non-Bivalent persister genes
+scRNA_table = readxl::read_xlsx(file.path(maindir, "output","combined_DA_MM468.xlsx"))
+scRNA_table = scRNA_table %>% dplyr::filter(log2FC.scRNA.Persister > log2(3), qval.scRNA.Persister < 0.01)
+scRNA_table$Significantly_bivalent[which(is.na(scRNA_table$Significantly_bivalent))] = FALSE 
+scRNA_table$Significantly_bivalent = as.logical(scRNA_table$Significantly_bivalent)
+
+bivalent_persister_genes = scRNA_table$Gene[which(scRNA_table$Significantly_bivalent == TRUE)]
+non_bivalent_persister_genes = setdiff(scRNA_table$Gene, bivalent_persister_genes)
+
+length(bivalent_persister_genes)
+length(non_bivalent_persister_genes)
+
+FOS_targets =  TF_genes$gene[which(TF_genes$TF=="FOS")]
+FOSL1_targets =  TF_genes$gene[which(TF_genes$TF=="FOSL1")]
+OSR2_targets =  TF_genes$gene[which(TF_genes$TF=="OSR2")]
+ING3_targets =  TF_genes$gene[which(TF_genes$TF=="ING3")]
+RUNX1_targets =  TF_genes$gene[which(TF_genes$TF=="RUNX1")]
+MAFG_targets =  TF_genes$gene[which(TF_genes$TF=="MAFG")]
+RELB_targets =  TF_genes$gene[which(TF_genes$TF=="RELB")]
+
+# Take one control TF randomly
+set.seed(47)
+for(i in 1:50){
+  around_1000 = names(table(TF_genes$TF))[table(TF_genes$TF)>500 & table(TF_genes$TF)<2000]
+  TF_control = sample(around_1000,1)
+  print(TF_control)
+  print(length(TF_genes$gene[which(TF_genes$TF==TF_control)]))
+  print(length(intersect(scRNA_table$Gene,TF_genes$gene[which(TF_genes$TF==TF_control)])))
+}
+
+
+NFYB_targets =  TF_genes$gene[which(TF_genes$TF=="NFYB")]
+
+length(FOS_targets)
+length(FOSL1_targets)
+length(OSR2_targets)
+length(MAFG_targets)
+length(NFYB_targets)
+
+pdf(file.path(output,"Number_persister_targets.pdf"))
+# intersection FOS - bivalent genes
+gplots::venn(list("FOS" = FOS_targets, "Bivalent_persister_genes" = bivalent_persister_genes), show.plot = T)
+
+# intersection FOSL1 - bivalent genes
+gplots::venn(list("FOSL1" = FOSL1_targets, "Bivalent_persister_genes" = bivalent_persister_genes), show.plot = T)
+
+# intersection OSR2 - bivalent genes
+gplots::venn(list("OSR2" = OSR2_targets, "Bivalent_persister_genes" = bivalent_persister_genes), show.plot = T)
+
+# intersection MAFG - bivalent genes
+gplots::venn(list("MAFG" = MAFG_targets, "Bivalent_persister_genes" = bivalent_persister_genes), show.plot = T)
+
+# intersection NFYB - bivalent genes
+gplots::venn(list("NFYB" = NFYB_targets, "Bivalent_persister_genes" = bivalent_persister_genes), show.plot = T)
+
+# intersection ING3 - bivalent genes
+gplots::venn(list("ING3" = ING3_targets, "Bivalent_persister_genes" = bivalent_persister_genes), show.plot = T)
+
+# intersection RUNX1 - bivalent genes
+gplots::venn(list("RUNX1" = RUNX1_targets, "Bivalent_persister_genes" = bivalent_persister_genes), show.plot = T)
+
+# intersection RELB - bivalent genes
+gplots::venn(list("RELB" = RELB_targets, "Bivalent_persister_genes" = bivalent_persister_genes), show.plot = T)
+
+# intersection FOS - non bivalent genes
+gplots::venn(list("FOS" = FOS_targets, "Non_Bivalent_persister_genes" = non_bivalent_persister_genes), show.plot = T)
+
+# intersection FOSL1 - non bivalent genes
+gplots::venn(list("FOSL1" = FOSL1_targets, "Non_Bivalent_persister_genes" = non_bivalent_persister_genes), show.plot = T)
+
+# intersection OSR2 - non bivalent genes
+gplots::venn(list("OSR2" = OSR2_targets, "Non_Bivalent_persister_genes" = non_bivalent_persister_genes), show.plot = T)
+
+# intersection MAFG - non bivalent genes
+gplots::venn(list("MAFG" = MAFG_targets, "Non_Bivalent_persister_genes" = non_bivalent_persister_genes), show.plot = T)
+
+# intersection NFYB - non bivalent genes
+gplots::venn(list("NFYB" = NFYB_targets, "Non_Bivalent_persister_genes" = non_bivalent_persister_genes), show.plot = T)
+
+# intersection ING3 - non bivalent genes
+gplots::venn(list("ING3" = ING3_targets, "Non_Bivalent_persister_genes" = non_bivalent_persister_genes), show.plot = T)
+
+# intersection RUNX1 - non bivalent genes
+gplots::venn(list("RUNX1" = RUNX1_targets, "Non_Bivalent_persister_genes" = non_bivalent_persister_genes), show.plot = T)
+
+# intersection RELB - non  bivalent genes
+gplots::venn(list("RELB" = RELB_targets, "Non_Bivalent_persister_genes" = non_bivalent_persister_genes), show.plot = T)
+
+# intersection FOS - all persister genes
+gplots::venn(list("FOS" = FOS_targets, "Persister_genes" = scRNA_table$Gene), show.plot = T)
+
+# intersection FOSL1 - all persister genes
+gplots::venn(list("FOSL1" = FOSL1_targets, "Persister_genes" = scRNA_table$Gene), show.plot = T)
+
+# intersection OSR2 - all persister genes
+gplots::venn(list("OSR2" = OSR2_targets, "Persister_genes" = scRNA_table$Gene), show.plot = T)
+
+# intersection MAFG - all persister genes
+gplots::venn(list("MAFG" = MAFG_targets, "Persister_genes" = scRNA_table$Gene), show.plot = T)
+
+# intersection NFYB - all persister genes
+gplots::venn(list("NFYB" = NFYB_targets, "Persister_genes" = scRNA_table$Gene), show.plot = T)
+
+# intersection NFYB - all persister genes
+gplots::venn(list("NFYB" = NFYB_targets, "Persister_genes" = scRNA_table$Gene), show.plot = T)
+
+# intersection ING3 - all persister  genes
+gplots::venn(list("ING3" = ING3_targets, "Persister_genes" = scRNA_table$Gene), show.plot = T)
+
+# intersection RUNX1 - all persister genes
+gplots::venn(list("RUNX1" = RUNX1_targets, "Persister_genes" = scRNA_table$Gene), show.plot = T)
+
+# intersection RELB - non  bivalent genes
+gplots::venn(list("RELB" = RELB_targets, "Persister_genes" =  scRNA_table$Gene), show.plot = T)
+dev.off()
+
+df = data.frame(TF = unique(TF_persister_regulons$TF), n_targets = 0, n_targets_in_persister=0, p.value = 0)
+unique_persister_genes_targeted = c()
+for(TF in unique(TF_persister_regulons$TF)){
+  # Fisher test for signifiance of enrichment of FOSL1 targets in persister genes:
+  table_enrichment_TF = t(data.frame(
+    TF = c(length(intersect(scRNA_table$Gene, TF_genes$gene[which(TF_genes$TF == TF)])),
+           length(unique(TF_genes$gene[which(TF_genes$TF == TF)])) - length(intersect(scRNA_table$Gene, TF_genes$gene[which(TF_genes$TF == TF)]))) ,
+    PERSISTER =  c(length(scRNA_table$Gene), length(unique(TF_genes$gene)) - length(scRNA_table$Gene))
+  ))
+  colnames(table_enrichment_TF) = c("PERSISTERS","ALL_OTHERS")
+  rownames(table_enrichment_TF)[1] = TF
+  print(table_enrichment_TF)
+  print(fisher.test(table_enrichment_TF, alternative = "greater")$p.value)
+  df$p.value[df$TF==TF] = fisher.test(table_enrichment_TF, alternative = "greater")$p.value
+  df$n_targets[df$TF==TF] = sum(table_enrichment_TF[1,])
+  df$n_targets_in_persister[df$TF==TF] = sum(table_enrichment_TF[1,1])
+  df$n_targets_in_persister_not_bivalent[df$TF==TF] = length(intersect(scRNA_table$Gene[!scRNA_table$Significantly_bivalent], TF_genes$gene[which(TF_genes$TF == TF)]))
+  unique_persister_genes_targeted = union(unique_persister_genes_targeted, intersect(scRNA_table$Gene, TF_genes$gene[which(TF_genes$TF == TF)]))
+}
+length(unique_persister_genes_targeted)
+pdf(file.path(output,"GRNs_persister_enrichment_in_persisters_barplot.pdf"))
+df %>% mutate("-log10(p.value)" = -log10(p.value)) %>%
+  mutate(TF = factor(TF, levels =c("FOSL1", "RUNX1","RELB","MAFG", "OSR2", "ING3"))) %>% 
+  ggplot(aes(x=TF, y= `-log10(p.value)`)) + geom_bar(fill = "#009688", stat="identity") +
+  theme_classic() + theme(axis.text.x = element_text(size = 15, angle=90)) + xlab("")
+dev.off()
+
+pdf(file.path(output,"GRNs_persister_n_targets_barplot.pdf"))
+df %>%
+  mutate(TF = factor(TF, levels =c("FOSL1", "RUNX1","RELB","MAFG", "OSR2", "ING3"))) %>% 
+  ggplot(aes(x=TF, y= n_targets)) + geom_bar(fill = "#009688", stat="identity") +
+  theme_classic() + theme(axis.text.x = element_text(size = 15, angle=90)) + xlab("")
+dev.off()
+
+
+pdf(file.path(output,"GRNs_persister_n_targets_persisters_barplot.pdf"))
+df %>%
+  mutate(TF = factor(TF, levels =c("FOSL1", "RUNX1","RELB","MAFG", "OSR2", "ING3"))) %>% 
+  ggplot(aes(x=TF, y= n_targets_in_persister)) + geom_bar(fill = "#009688", stat="identity") +
+  theme_classic() + theme(axis.text.x = element_text(size = 15, angle=90)) + xlab("")
+dev.off()
+
+pdf(file.path(output,"GRNs_persister_ratio_persisters_barplot.pdf"))
+df %>% mutate(ratio_persister_on_total_targets = n_targets_in_persister / n_targets) %>%
+  mutate(TF = factor(TF, levels =c("RUNX1","RELB","FOSL1", "OSR2", "MAFG",  "ING3"))) %>% 
+  ggplot(aes(x=TF, y= ratio_persister_on_total_targets)) + geom_bar(fill = "#009688", stat="identity") +
+  theme_classic() + theme(axis.text.x = element_text(size = 15, angle=90)) + xlab("")
+dev.off()
+
+
+pdf(file.path(output,"GRNs_persister_ratio_persisters_barplot_non_bivalent.pdf"))
+df %>% mutate(ratio_persister_on_total_targets = n_targets_in_persister_not_bivalent / n_targets) %>%
+  mutate(TF = factor(TF, levels =c("RUNX1","RELB","FOSL1", "OSR2", "MAFG",  "ING3"))) %>% 
+  ggplot(aes(x=TF, y= ratio_persister_on_total_targets)) + geom_bar(fill = "#009688", stat="identity") +
+  theme_classic() + theme(axis.text.x = element_text(size = 15, angle=90)) + xlab("")
+dev.off()
+
+pdf(file.path(output,"GRNs_persister_non_bivalent_persisters_barplot.pdf"))
+df %>% 
+  mutate(TF = factor(TF, levels =c("FOSL1", "RUNX1","RELB","MAFG", "OSR2",   "ING3"))) %>% 
+  ggplot(aes(x=TF, y= n_targets_in_persister_not_bivalent)) + geom_bar(fill = "#009688", stat="identity") +
+  theme_classic() + theme(axis.text.x = element_text(size = 15, angle=90)) + xlab("")
+dev.off()
+
+pdf(file.path(output,"GRNs_persister_ratio_targeted_non_bivalent_persisters_total_non_bivalent_persisters_barplot.pdf"))
+df %>% mutate(ratio_n_targets_in_persister_not_bivalent = 100* n_targets_in_persister_not_bivalent / length(scRNA_table$Gene[!scRNA_table$Significantly_bivalent])) %>% 
+  mutate(TF = factor(TF, levels =c("FOSL1", "RUNX1","RELB","MAFG", "OSR2", "ING3"))) %>% 
+  ggplot(aes(x=TF, y= ratio_n_targets_in_persister_not_bivalent)) + geom_bar(fill = "#009688", stat="identity") +
+  theme_classic() + theme(axis.text.x = element_text(size = 15, angle=90),
+                          axis.text.y = element_text(size = 14)) + xlab("") + ylim(c(0,60)) + ylab("% targeted non bivalent genes")
+dev.off()
+```
+
+**Note: The toy dataset only contains ~8 regulons; using more than 8 PCs will not provide any difference...** 
+
+and to view/compare them...
+
+
+The chosen t-SNE can then be saved as default to use for plots (can also be "binary", see below):
+```{r}
+nCores <- getSettings(scenicOptions, "nCores")
+if (is.data.frame(exprMat)) {
+  supportedClasses <- paste(gsub("AUCell_buildRankings,", 
+                                 "", methods("AUCell_buildRankings")), collapse = ", ")
+  supportedClasses <- gsub("-method", "", supportedClasses)
+  stop("'exprMat' should be one of the following classes: ", 
+       supportedClasses, "\n(data.frames are not supported. Please, convert the expression matrix to one of these classes.)")
+}
+regulons <- tryCatch(loadInt(scenicOptions, "regulons"), 
+                     error = function(e) {
+                       if (getStatus(scenicOptions, asID = TRUE) < 2) 
+                         e$message <- paste0("It seems the regulons have not been built yet. Please, run runSCENIC_2_createRegulons() first.\n", 
+                                             e$message)
+                       stop(e)
+                     })
+regulons <- regulons[order(lengths(regulons), decreasing = TRUE)]
+regulons <- regulons[lengths(regulons) >= 10]
+if (length(regulons) < 2) 
+  stop("Not enough regulons with at least 10 genes.")
+regulons <- setNames(lapply(names(regulons), function(tf) sort(unique(c(gsub("_extended", 
+                                                                             "", tf), regulons[[tf]])))), names(regulons))
+names(regulons) <- paste(names(regulons), " (", lengths(regulons), 
+                         "g)", sep = "")
+saveRDS(regulons, file = getIntName(scenicOptions, "aucell_regulons"))
+msg <- paste0(format(Sys.time(), "%H:%M"), "\tStep 3. Analyzing the network activity in each individual cell")
+if (getSettings(scenicOptions, "verbose")) 
+  message(msg)
+biggestRegulons <- grep("_extended", names(regulons), invert = T, 
+                        value = T)
+biggestRegulons <- biggestRegulons[1:min(length(biggestRegulons), 
+                                         10)]
+msg <- paste0("\tNumber of regulons to evaluate on cells: ", 
+              length(regulons), "\nBiggest (non-extended) regulons: \n", 
+              paste("\t", biggestRegulons, collapse = "\n"))
+if (getSettings(scenicOptions, "verbose")) 
+  message(msg)
+library(AUCell)
+set.seed(getSettings(scenicOptions, "seed"))
+tryCatch({
+  SCENIC:::.openDev(fileName = getIntName(scenicOptions, "aucell_genesStatsPlot"), 
+                    devType = getSettings(scenicOptions, "devType"))
+  aucellRankings <- AUCell_buildRankings(exprMat, nCores = nCores, 
+                                         plotStats = TRUE, verbose = getSettings(scenicOptions, 
+                                                                                 "verbose"))
+  abline(v = aucellRankings@nGenesDetected["1%"], col = "skyblue3", 
+         lwd = 5, lty = 3)
+  dev.off()
+}, error = function(e) {
+  message("Catched error in AUCell_buildRankings() or in the histogram plot: ", 
+          e$message)
+})
+saveRDS(aucellRankings, file = getIntName(scenicOptions, 
+                                          "aucell_rankings"))
+regulonAUC <- AUCell_calcAUC(regulons, aucellRankings, aucMaxRank = aucellRankings@nGenesDetected["1%"], 
+                             nCores = nCores)
+variableRegulons <- names(which(apply(getAUC(regulonAUC), 
+                                      1, sd) > 0))
+reguDist <- as.dist(1 - cor(t(getAUC(regulonAUC)[variableRegulons, 
+]), method = "spear"))
+reguClust <- hclust(reguDist, method = "ward.D2")
+regulonClusters <- setNames(dynamicTreeCut::cutreeDynamic(reguClust, 
+                                                          distM = as.matrix(reguDist), verbose = FALSE), reguClust$labels)
+regulonOrder <- reguClust$labels[reguClust$order]
+regulonOrder <- regulonOrder[order(regulonClusters[regulonOrder], 
+                                   decreasing = TRUE)]
+regulonAUC <- regulonAUC[regulonOrder, ]
+saveRDS(regulonAUC, file = getIntName(scenicOptions, "aucell_regulonAUC"))
+cells_AUCellThresholds <- NULL
+if (!skipBinaryThresholds) {
+  cells_AUCellThresholds <- AUCell_exploreThresholds(regulonAUC, 
+                                                     smallestPopPercent = getSettings(scenicOptions, "aucell/smallestPopPercent"), 
+                                                     assignCells = TRUE, plotHist = FALSE, verbose = FALSE, 
+                                                     nCores = nCores)
+  saveRDS(cells_AUCellThresholds, file = getIntName(scenicOptions, 
+                                                    "aucell_thresholds"))
+  regulonsCells <- getAssignments(cells_AUCellThresholds)
+  trhAssignment <- getThresholdSelected(cells_AUCellThresholds)
+  trhAssignment <- signif(trhAssignment, 3)
+  commentsThresholds <- sapply(cells_AUCellThresholds, 
+                               function(x) unname(x$aucThr$comment))
+  table2edit <- cbind(regulon = names(cells_AUCellThresholds), 
+                      threshold = trhAssignment[names(cells_AUCellThresholds)], 
+                      nCellsAssigned = lengths(regulonsCells)[names(cells_AUCellThresholds)], 
+                      AUCellComment = commentsThresholds[names(cells_AUCellThresholds)], 
+                      nGenes = gsub("[\\(g\\)]", "", regmatches(names(cells_AUCellThresholds), 
+                                                                gregexpr("\\(.*?\\)", names(cells_AUCellThresholds)))), 
+                      clusteringOrder = 1:length(cells_AUCellThresholds), 
+                      clusterGroup = regulonClusters[names(cells_AUCellThresholds)], 
+                      onlyNonDuplicatedExtended = (names(cells_AUCellThresholds) %in% 
+                                                     onlyNonDuplicatedExtended(names(cells_AUCellThresholds))), 
+                      personalNotes = "")
+  write.table(table2edit, file = getIntName(scenicOptions, 
+                                            "aucell_thresholdsTxt"), row.names = F, quote = F, 
+              sep = "\t")
+  rm(trhAssignment)
+}
+msg <- paste0(format(Sys.time(), "%H:%M"), "\tFinished running AUCell.")
+if (getSettings(scenicOptions, "verbose")) 
+  message(msg)
+if (!skipHeatmap) {
+  msg <- paste0(format(Sys.time(), "%H:%M"), "\tPlotting heatmap...")
+  if (getSettings(scenicOptions, "verbose")) 
+    message(msg)
+  nCellsHeatmap <- min(500, ncol(regulonAUC))
+  cells2plot <- sample(colnames(regulonAUC), nCellsHeatmap)
+  cellInfo <- loadFile(scenicOptions, getDatasetInfo(scenicOptions, 
+                                                     "cellInfo"), ifNotExists = "null")
+  if (!is.null(cellInfo)) 
+    cellInfo <- data.frame(cellInfo)[cells2plot, , drop = F]
+  colVars <- loadFile(scenicOptions, getDatasetInfo(scenicOptions, 
+                                                    "colVars"), ifNotExists = "null")
+  fileName <- getOutName(scenicOptions, "s3_AUCheatmap")
+  fileName <- SCENIC:::.openDevHeatmap(fileName = fileName, devType = getSettings(scenicOptions, 
+                                                                                  "devType"))
+  
+  NMF::aheatmap(getAUC(regulonAUC)[, cells2plot], annCol = cellInfo, 
+                annColor = colVars, main = "AUC", sub = paste("Subset of", 
+                                                              nCellsHeatmap, " random cells"), filename = fileName)
+  SCENIC:::.closeDevHeatmap(devType = getSettings(scenicOptions, 
+                                                  "devType"))
+}
+if (!skipTsne) {
+  msg <- paste0(format(Sys.time(), "%H:%M"), "\tPlotting t-SNEs...")
+  if (getSettings(scenicOptions, "verbose")) 
+    message(msg)
+  tSNE_fileName <- tsneAUC(scenicOptions, aucType = "AUC", 
+                           onlyHighConf = FALSE)
+  tSNE <- readRDS(tSNE_fileName)
+  fileName <- getOutName(scenicOptions, "s3_AUCtSNE_colAct")
+  plotTsne_AUCellHtml(scenicOptions, exprMat, fileName, 
+                      tSNE)
+  sub <- ""
+  if ("type" %in% names(tSNE)) 
+    sub <- paste0("t-SNE on ", tSNE$type)
+  cellInfo <- loadFile(scenicOptions, getDatasetInfo(scenicOptions, 
+                                                     "cellInfo"), ifNotExists = "null")
+  colVars <- loadFile(scenicOptions, getDatasetInfo(scenicOptions, 
+                                                    "colVars"), ifNotExists = "null")
+  pdf(paste0(getOutName(scenicOptions, "s3_AUCtSNE_colProps"), 
+             ".pdf"))
+  plotTsne_cellProps(tSNE$Y, cellInfo = cellInfo, colVars = colVars, 
+                     cex = 1, sub = sub)
+  dev.off()
+}
+scenicOptions@status$current <- 3
+invisible(scenicOptions)
+```
+
+```{r changeDefaultTsne}
+scenicOptions@settings$defaultTsne$aucType <- "AUC"
+scenicOptions@settings$defaultTsne$dims <- 5
+scenicOptions@settings$defaultTsne$perpl <- 15
+saveRDS(scenicOptions, file="int/scenicOptions.Rds")
+```
+# Export to loom/SCope
+
+The results from SCENIC can also be explored in http://scope.aertslab.org ([*@davie2018*](https://doi.org/10.1016/j.cell.2018.05.057)).
+
+The `.loom` file can be created with the function `export2loom()` (requires the package `SCopeLoomR`). This function saves the the main results from SCENIC  into a .loom file: 
+
+- Regulons 
+
+- Regulon activity (AUC matrix and thresholds)
+
+- Embeddings (e.g. t-SNE and UMAP on the regulon activity)
+
+The **motif enrichment analysis** and **co-expression modules** (e.g. GRNBoost/GENIE3 output) are stored in independent text files (mostly due to their bigger size).
+
+```{r eval=FALSE}
+DGEM (Digital gene expression matrix)
+(non-normalized counts)
+exprMat <- get_dgem(open_loom(loomPath))
+dgem <- exprMat
+head(colnames(dgem))  #should contain the Cell ID/name
+
+# Export:
+scenicOptions@fileNames$output["loomFile",] <- "output/mouseBrain_SCENIC.loom"
+export2loom(scenicOptions, exprMat)
+```
+
+To add extra data (e.g. embeddings or clusters), see `help(package="SCopeLoomR")`.
+
+## Loading results from a .loom file
+
+`SCopeLoomR` also provides functions to import the regulons, AUC, and embeddings back from the loom file. e.g.: 
+
+```{r readLoom, eval=FALSE}
+library(SCopeLoomR)
+scenicLoomPath <- getOutName(scenicOptions, "loomFile")
+loom <- open_loom(scenicLoomPath)
+
+# Read information from loom file:
+regulons_incidMat <- get_regulons(loom)
+regulons <- regulonsToGeneLists(regulons_incidMat)
+regulonsAUC <- get_regulons_AUC(loom)
+regulonsAucThresholds <- get_regulon_thresholds(loom)
+embeddings <- get_embeddings(loom)
+```
+
+# Exploring/interpreting the results 
+
+The `output` folder contains several files that provide an overview of the results from each step. These results can be explored in more detail through the intermediate files (saved in the `int` folder, which can be listed with `loadInt(scenicOptions)`).
+
+Some examples on how to explore the results:
+
+## Cell states 
+
+AUCell provides the activity of the regulons across the cells. By clustering the cells based on this regulon activity (either the continuous or binary AUC matrix), we can see whether there are groups of cells that tend to have the same regulons active, and reveal the network states that are recurrent across multiple cells. These states would be equivalent to the *attractor states* of the network. Combining these clustering with different visualization methods, we can explore the **association of cell states with specific regulons**. 
+
+SCENIC provides some wrapper functions to get a quick overview. For example, projecting the AUC and TF expression onto t-SNEs, and visualizing of the AUC as heatmaps, but feel free to explore alternative clustering and visualization tools.
+
+### Projection the AUC and TF expression onto t-SNEs
+
+Briefly, a t-SNE is a 2D projection of the cells, where cells (dots) are placed close to each other if they have similar input profiles (in our case, regulon activity).
+The t-SNE usually allows to get a quick and easy overview of the cell states in the dataset. 
+Note however, that t-SNE works well to identify distinct classes, but it is not appropiate for dinamic/continuous processes (e.g. trajectory-like visualizations).
+
+AUCell's interactive app *(for [SCope](http://scope.aertslab.org), see section "Export to loom/SCope")*:
+```{r aucellApp2, eval=FALSE}
+exprMat_log <- exprMat # Better if it is logged/normalized
+aucellApp <- plotTsne_AUCellApp(scenicOptions, exprMat_log) # default t-SNE
+savedSelections <- shiny::runApp(aucellApp)
+```
+
+`AUCell_plotTSNE()` to save static plots:
+```{r tsneTfExpression, fig.height=6, fig.width=8}
+print(tsneFileName(scenicOptions))
+tSNE_scenic <- readRDS(tsneFileName(scenicOptions))
+aucell_regulonAUC <- loadInt(scenicOptions, "aucell_regulonAUC")
+
+# Show TF expression:
+par(mfrow=c(2,3))
+AUCell::AUCell_plotTSNE(tSNE_scenic$Y, exprMat, aucell_regulonAUC[onlyNonDuplicatedExtended(rownames(aucell_regulonAUC))[c("FOS","RUNX1","FOSL1")],], plots="Expression", cex = 0.5, alphaOff = 0.9)
+```
+
+```{r tsneAUC_overview, eval=FALSE}
+# Save AUC as PDF:
+Cairo::CairoPDF("output/Step4_BinaryRegulonActivity_tSNE_colByAUC.pdf", width=20, height=15)
+par(mfrow=c(4,6))
+AUCell::AUCell_plotTSNE(tSNE_scenic$Y, cellsAUC=aucell_regulonAUC, plots="AUC")
+dev.off()
+```
+
+Density plot to detect most likely stable states (higher-density areas in the t-SNE):
+```{r tSNE_density, fig.height=4, fig.width=4}
+library(KernSmooth)
+library(RColorBrewer)
+dens2d <- bkde2D(tSNE_scenic$Y, 1)$fhat
+image(dens2d, col=brewer.pal(9, "YlOrBr"), axes=FALSE)
+contour(dens2d, add=TRUE, nlevels=5, drawlabels=FALSE)
+```
+
+Show several regulons simultaneously:
+```{r tSNE_3cols, fig.height=4, fig.width=8}
+#par(bg = "black")
+par(mfrow=c(1,2))
+
+regulonNames <- c( "Dlx5","Sox10")
+cellCol <- plotTsne_rgb(scenicOptions, regulonNames, aucType="AUC", aucMaxContrast=0.6)
+
+regulonNames <- list(red=c("Sox10", "Sox8"),
+                     green=c("Irf1"),
+                     blue=c( "Tef"))
+cellCol <- plotTsne_rgb(scenicOptions, regulonNames, aucType="Binary")
+```
+
+## GRN: Regulon targets and motifs
+
+**Genes included in the regulons**: 
+
+```{r seeRegulons}
+regulons <- loadInt(scenicOptions, "regulons")
+regulons[c("Dlx5", "Irf1")]
+```
+
+Note than only regulons with 10 genes or more are scored with AUCell (the numbers in brackets in the regulon names indicate the number of genes in the regulon): 
+```{r seeRegulons2}
+regulons <- loadInt(scenicOptions, "aucell_regulons")
+head(cbind(onlyNonDuplicatedExtended(names(regulons))))
+```
+
+Details on the TF-target links: For each TF-target pair, the stats from the intermediate steps are summarized in `loadInt(scenicOptions, "regulonTargetsInfo")` (saved as text in: `getOutName(scenicOptions, "s2_regulonTargetsInfo")`: `r getOutName(scenicOptions, "s2_regulonTargetsInfo")`). This table can be used to explore the support to specific links. Since it will typically contain several thousand rows (in this run: `r nrow(loadInt(scenicOptions, "regulonTargetsInfo"))`), in most cases it is advisable to subset it before exporting it as HTML.
+
+```{r motifEnrichmentDT}
+regulonTargetsInfo <- loadInt(scenicOptions, "regulonTargetsInfo")
+tableSubset <- regulonTargetsInfo[TF=="Stat6" & highConfAnnot==TRUE]
+viewMotifs(tableSubset, options=list(pageLength=5)) 
+```
+
+
+The full list of **TF motifs** supporting the regulons can be seen in the restuls from **RcisTarget motif enrichment results** (for the co-expression modules). These are saved in `motifEnrichment_selfMotifs_wGenes`.
+A preview of these results is exported as html in *`r getOutName(scenicOptions, "s2_motifEnrichmentHtml")`* (and as text in: *`r getOutName(scenicOptions, "s2_motifEnrichment")`*).
+
+Alternative tables, showing more or fewer rows/columns could be generated modifiying this code: 
+
+```{r motifEnrichmentDTsubset, eval=FALSE}
+motifEnrichment_selfMotifs_wGenes <- loadInt(scenicOptions, "motifEnrichment_selfMotifs_wGenes")
+tableSubset <- motifEnrichment_selfMotifs_wGenes[highlightedTFs=="Dlx5"]
+viewMotifs(tableSubset) 
+```
+
+## Regulators for known cell types or clusters
+
+The regulatory analysis from SCENIC can be combined with other analyses (typically clustering), or focus on regulators for specific cell types. There are multiple options to do these analyses (your imagination is the limit!). 
+Here are some quick examples to start:
+
+- **Average Regulon Activity** by cluster
+
+To start from clusters/cell types from Seurat: `cellInfo <- data.frame(seuratCluster=Idents(seuratObject))`)
+
+```{r}
+regulonAUC <- loadInt(scenicOptions, "aucell_regulonAUC")
+regulonAUC <- regulonAUC[onlyNonDuplicatedExtended(rownames(regulonAUC)),]
+regulonActivity_byCellType <- sapply(split(rownames(cellInfo), cellInfo$sample_id),
+                                     function(cells) rowMeans(getAUC(regulonAUC)[,cells]))
+regulonActivity_byCellType_Scaled <- t(scale(t(regulonActivity_byCellType), center = T, scale=T))
+
+pdf("output/Regulon_activity_per_sample.pdf")
+ComplexHeatmap::Heatmap(regulonActivity_byCellType_Scaled, row_names_gp = gpar(fontsize = 2), name="Regulon activity")
+dev.off()
+
+```
+
+```{r}
+topRegulators <- reshape2::melt(regulonActivity_byCellType_Scaled)
+colnames(topRegulators) <- c("Regulon", "CellType", "RelativeActivity")
+topRegulators <- topRegulators[which(topRegulators$RelativeActivity>0),]
+viewTable(topRegulators)
+```
+
+- Binarized version (**~ percentage** of cells of that cell type/cluster with the regulon active)
+```{r}
+minPerc <- .7
+binaryRegulonActivity <- loadInt(scenicOptions, "aucell_binary_nonDupl")
+cellInfo_binarizedCells <- cellInfo[which(rownames(cellInfo)%in% colnames(binaryRegulonActivity)),, drop=FALSE]
+regulonActivity_byCellType_Binarized <- sapply(split(rownames(cellInfo_binarizedCells), cellInfo_binarizedCells$sample_id), 
+                                               function(cells) rowMeans(binaryRegulonActivity[,cells, drop=FALSE]))
+binaryActPerc_subset <- regulonActivity_byCellType_Binarized[which(rowSums(regulonActivity_byCellType_Binarized>minPerc)>0),]
+ComplexHeatmap::Heatmap(binaryActPerc_subset, name="Regulon activity (%)", col = c("white","pink","red"))
+
+topRegulators <- reshape2::melt(regulonActivity_byCellType_Binarized)
+colnames(topRegulators) <- c("Regulon", "CellType", "RelativeActivity")
+topRegulators <- topRegulators[which(topRegulators$RelativeActivity>minPerc),]
+viewTable(topRegulators)
+```
+
+- **Cell-type specific** regulators (based on the **Regulon Specificity Score (RSS)** proposed by *Suo et al.* for the Mouse Cell Atlas in 2018). 
+Useful for big analysis with many cell types, to identify the cell-type specific regulons.
+
+```{r RSS}
+regulonAUC <- loadInt(scenicOptions, "aucell_regulonAUC")
+rss <- calcRSS(AUC=getAUC(regulonAUC), cellAnnotation=cellInfo[colnames(regulonAUC), "sample_id"])
+rssPlot <- plotRSS(rss)
+plotly::ggplotly(rssPlot$plot)
+```
+
+```{r RSS_one}
+plotRSS_oneSet(rss, setName = "MM468_initial")
+plotRSS_oneSet(rss, setName = "MM468_5FU6_day33")
+```
+
+
+- Visualizing the regulon activities on **embeddings/trajectories** calculated with other methods...
+```{r Seurat, eval=FALSE}
+library(Seurat)
+dr_coords <- Embeddings(seuratObject, reduction="tsne")
+
+tfs <- c("Sox10","Irf1","Sox9", "Dlx5")
+par(mfrow=c(2,2))
+AUCell::AUCell_plotTSNE(dr_coords, cellsAUC=selectRegulons(regulonAUC, tfs), plots = "AUC")
+```
+
+# SessionInfo
+```{r sessionInfo}
+date()
+sessionInfo()
+```
+

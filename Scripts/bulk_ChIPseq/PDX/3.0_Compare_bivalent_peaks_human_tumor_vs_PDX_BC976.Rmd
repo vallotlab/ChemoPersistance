@@ -1,0 +1,136 @@
+---
+    title: "Compare Human Tumor PDX_Tumor vs PDX PDX_Tumor"
+author: "Pacome Prompsy"
+date: "05/06/2019"
+output:
+    html_document: default
+pdf_document: default
+---
+    
+    ```{r setup, include=FALSE}
+# Create 10k transcript TSS K27 annotation 
+library(here)
+maindir = here()
+source(file.path(maindir,"Scripts","global_var.R"))
+```
+
+```{r, echo=FALSE}
+#Directories
+dataDir <- file.path(maindir,"input","bulk_ChIPseq","PDX")
+annotDir <- file.path(maindir,"annotation")
+resdir_PDX <- file.path(maindir,"output","bulk_ChIPseq","BC976","ChIPreChIP")
+resdir_human_tumor <- file.path(maindir,"output","bulk_ChIPseq","Human","Bivalence")
+
+if(!dir.exists(resdir)) dir.create(resdir)
+```
+
+
+```{r, echo=FALSE}
+annot_10k = read.table(gzfile(file.path(maindir,"annotation",
+                                        "gencode.v34.annotation.transcriptTSS_10k.bed.gz")),
+                       sep="\t", header = F)
+colnames(annot_10k) = c("chr","start","end","transcripts","gene","strand")
+annot_10k = as(annot_10k,"GRanges")
+annot_10k$ID = paste0(seqnames(annot_10k),"_",start(annot_10k),"_", end(annot_10k))
+
+# Human tumor bivalent genes & GSA
+bivalent_genes_human_tumor = read.csv(file.path(resdir_human_tumor,"K27_K4_df_hT_PDX_BC976.csv"))
+bivalent_genes_human_tumor = unique(unlist(strsplit(bivalent_genes_human_tumor$Gene[which(bivalent_genes_human_tumor$Significant)], split = ",")))
+bivalent_GSA_human_tumor = readxl::read_xlsx(file.path(resdir_human_tumor,"Enrichment_test_Bivalent_pathways_hT_PDX_BC976.xlsx"))
+
+classes = c("c2_curated","c5_GO","hallmark")
+pattern = c("HALLMARK|BREAST|MAMMARY")
+bivalent_GSA_human_tumor$Model = "Human_Tumor"
+bivalent_GSA_human_tumor = bivalent_GSA_human_tumor[which(bivalent_GSA_human_tumor$Class %in% classes),]
+bivalent_GSA_human_tumor = bivalent_GSA_human_tumor[grep(pattern, bivalent_GSA_human_tumor$Gene.Set),]
+bivalent_GSA_human_tumor = bivalent_GSA_human_tumor[grep("AMPLICON", invert = TRUE, bivalent_GSA_human_tumor$Gene.Set),]
+bivalent_GSA_human_tumor$log10.qvalue = -log10(bivalent_GSA_human_tumor$`q-value`)
+bivalent_GSA_human_tumor = bivalent_GSA_human_tumor[which(bivalent_GSA_human_tumor$`q-value` < 0.1),]
+
+# PDX bivalent genes & GSA
+bivalent_genes_PDX = read.csv(file.path(resdir_PDX,"fisher_pvalue_K4_K27_peak_1e-15_4.csv"))
+bivalent_genes_PDX = unique(unlist(strsplit(bivalent_genes_PDX$gene[which(bivalent_genes_PDX$Significant)], split = ",")))
+length(bivalent_genes_PDX)
+
+bivalent_GSA_PDX = readxl::read_xlsx(file.path(resdir_PDX,"Enrichment_test_Bivalent_pathways_K4_K27.xlsx"))
+bivalent_GSA_PDX$Model = "PDX_Tumor"
+bivalent_GSA_PDX = bivalent_GSA_PDX[which(bivalent_GSA_PDX$Class %in% classes),]
+bivalent_GSA_PDX = bivalent_GSA_PDX[grep(pattern, bivalent_GSA_PDX$Gene.Set),]
+bivalent_GSA_PDX = bivalent_GSA_PDX[grep("AMPLICON", invert = TRUE, bivalent_GSA_PDX$Gene.Set),]
+bivalent_GSA_PDX$log10.qvalue = -log10(bivalent_GSA_PDX$`q-value`)
+bivalent_GSA_PDX = bivalent_GSA_PDX[which(bivalent_GSA_PDX$`q-value` < 0.1),]
+
+
+GSA_combined = rbind(bivalent_GSA_human_tumor,
+                     bivalent_GSA_PDX)
+
+classes = c("c2_curated", "c5_GO","hallmark")
+pattern = "BREAST|MAMMARY|HALLMARK"
+
+
+GSA_combined_save =  GSA_combined
+GSA_combined_save = GSA_combined_save %>% group_by(Gene.Set) %>% mutate(occurence = n())
+
+GSA_combined_save = GSA_combined_save %>% tidyr::spread(key=Model,value=`q-value`)
+
+GSA_combined_save = GSA_combined_save %>% filter(occurence > 1) %>%
+    group_by(Gene.Set) %>% summarise(
+        Nb_of_genes = mean(Nb_of_genes),
+        Nb_of_deregulated_genes = round(mean(Nb_of_deregulated_genes)),
+        Class = unique(Class),
+        Deregulated_genes = paste(unique(unlist(strsplit(Deregulated_genes,split = ";"))), collapse = ","),
+        q.value_Human_Tumor = mean(Human_Tumor, na.rm = T),
+        q.value_PDX_Tumor = mean(PDX_Tumor, na.rm = T)) %>% mutate(
+            q.value_Human_Tumor = ifelse(is.nan(q.value_Human_Tumor),NA, q.value_Human_Tumor),
+            q.value_PDX_Tumor =ifelse(is.nan(q.value_PDX_Tumor),NA, q.value_PDX_Tumor),
+            log10.q.value_Human_Tumor = -log10(q.value_Human_Tumor),
+            log10.q.value_PDX_Tumor = -log10(q.value_PDX_Tumor)) %>% mutate(
+                mean_qval = rowMeans(dplyr::select(., dplyr::starts_with("q.value_")), na.rm = T),
+                mean_log10qval = rowMeans(dplyr::select(., dplyr::starts_with("log10.q.value")), na.rm = T)
+            )
+
+GSA_combined_save = GSA_combined_save %>% arrange(desc(mean_log10qval))
+WriteXLS::WriteXLS(GSA_combined_save, ExcelFileName = file.path(resdir_PDX,"combined_GSA_Bivalence_HumanTumor_vs_PDX_BC976.xlsx"))
+
+png(file.path(resdir_PDX,"Intersection_PDX_bivalent_pathways.png"),width = 1200, height = 1200, res = 200)
+gplots::venn(
+    list("HumanTumor_BC976" = bivalent_GSA_human_tumor$Gene.Set,
+         "PDX_BC976" = bivalent_GSA_PDX$Gene.Set),
+    show.plot = T)
+dev.off()
+
+png(file.path(resdir_PDX,"Intersection_PDX_bivalent_genes.png"),width = 1200, height = 1200, res = 200)
+gplots::venn(
+    list("HumanTumor_BC976" = bivalent_genes_human_tumor,
+         "PDX_BC976" = bivalent_genes_PDX),
+    show.plot = T)
+dev.off()
+
+
+png(file.path(resdir_PDX,"DotPlot_HumanTumor_vs_PDX_Bivalent_Pathways.png"),width = 2000, height = 2000, res = 300)
+GSA_combined_save  %>% 
+    ggplot(aes(x =log10.q.value_Human_Tumor , y =log10.q.value_PDX_Tumor )) + geom_point() +
+    theme_classic() + theme(legend.position = "none",
+                            axis.text.x = element_text(angle=90))  +
+    ggrepel::geom_text_repel(aes(label=Gene.Set), box.padding = 1) +
+    annotate(x = 20, y = 15, geom = "text",
+             label = paste("Rho = ", round(cor(GSA_combined_save$log10.q.value_Human_Tumor, GSA_combined_save$log10.q.value_PDX_Tumor),2) ))
+dev.off()
+
+# Fisher test
+annot_10k = read.table(file.path(maindir,"annotation", "gencode.v34.annotation.transcriptTSS_10k.bed"))
+all_genes = unique(annot_10k$V5)
+
+A_B = length(intersect(bivalent_genes_human_tumor,bivalent_genes_PDX))
+A_nonB = length(bivalent_genes_human_tumor) - A_B
+B_nonA =  length(bivalent_genes_PDX) - A_B
+Omega = length(all_genes) - length(union(bivalent_genes_human_tumor,bivalent_genes_PDX))
+
+contingency_table_A_U_B = data.frame("Inside B" = c(A_B,
+                                     B_nonA),
+                               "Outside B" = c(A_nonB,
+                                     Omega), row.names = c("A","All Genes"))
+
+fisher.test(contingency_table_A_U_B,alternative = "greater")
+
+```

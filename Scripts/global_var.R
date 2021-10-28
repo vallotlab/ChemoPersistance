@@ -1,54 +1,55 @@
 ###### LIBRARIES ######
 
 # Packages
-library(ChromSCape)
-library(devtools)
-library(DropletUtils)
-library(irlba)
-library(corrplot)
-library(R.utils)
-library(scater)
-library(Rtsne)
-library(ccRemover)
-library(viridis)
-library(colorRamps)
-library(RColorBrewer)
-library(edgeR)
-library(gplots)
-library(ggplot2)
-library(RColorBrewer)
-library(genefilter)
-library(xtable)
-library(WriteXLS)
-library(data.table)
-library(stringr)
-library(limma)
-#library(edgeR)
-library(monocle3)
-library(dplyr)
-library(Seurat)
-library(dendextend)
-library(clValid)
-library(ape)
-library(ConsensusClusterPlus)
-library(Matrix)
-library(genefilter)
-library(ggpubr)
-library(eulerr)
-library(GenomicRanges)
-library(Sushi)
-library(kableExtra)
-library(colorspace)
-library(forcats)
+library(ChromSCape)           # Bioconductor v1.2.60
+library(devtools)             # CRAN v2.4.2
+library(DropletUtils)         # Bioconductor v1.12.2
+library(irlba)                # CRAN v2.3.3
+library(corrplot)             # CRAN v0.90
+library(R.utils)              # CRAN v2.10.1
+library(scater)               # Bioconductor v1.20.1
+library(Rtsne)                # CRAN v0.15
+library(ccRemover)            # CRAN v1.0.4
+library(viridis)              # CRAN v0.6.1
+library(colorRamps)           # CRAN v2.3
+library(RColorBrewer)         # CRAN v1.1-2 # CRAN v1.1-2
+library(edgeR)                # Bioconductor v3.34.0
+library(gplots)               # CRAN v3.1.1
+library(ggplot2)              # CRAN v3.3.5
+library(RColorBrewer)         # CRAN v1.1-2 # CRAN v1.1-2
+library(genefilter)           # CRAN v1.74.0 
+library(xtable)               # CRAN v1.8-4
+library(WriteXLS)             # CRAN v6.3.0
+library(data.table)           # CRAN v1.14.0
+library(stringr)              # CRAN v1.4.0
+library(limma)                # Bioconductor v3.48.1
+library(edgeR)                # Bioconductor v3.34.0 
+library(monocle3)             # [github::cole-trapnell-lab/monocle3] v1.0.0
+library(dplyr)                # CRAN v1.0.7
+library(Seurat)               # CRAN v4.0.3
+library(dendextend)           # CRAN v1.15.1
+library(ape)                  # CRAN v5.5
+library(ConsensusClusterPlus) # Bioconductor v1.56.0
+library(Matrix)               # CRAN v1.3-4
+library(genefilter)           # CRAN v1.74.0 
+library(ggpubr)               # CRAN v0.4.0
+library(eulerr)               # CRAN v6.1.0
+library(GenomicRanges)        # Bioconductor v1.44.0
+library(Sushi)                # Bioconductor v1.30.0
+library(kableExtra)           # CRAN v1.3.4
+library(colorspace)           # CRAN v2.0-2
+library(forcats)              # CRAN v0.5.1
 
-#Geco packages
+# Geco packages - To download manually from the annotation/Packages
+# using e.g. install.packages("annotation/Packages/geco.utils.tar.gz", repos = NULL)
+# The geco.utils & geco.visu should be installed first.
+library(geco.utils)
+library(geco.visu)
 library(geco.supervised)
 library(geco.RNAseq)
 library(geco.ChIPseq)
-library(geco.utils)
-library(geco.visu)
-library(scTools)
 library(geco.unsupervised)
+library(scTools)
 
 ###### GLOBAL VARIABLES ######
 pcaText <- TRUE
