@@ -60,10 +60,10 @@ files.
 ## 1.0 scRNA-seq
 
 ### PDX models
-Note that:
-BC976 stands for PDX_95/Patient_95
-BC408 stands for PDX_39/Patient_39
-BC1224 stands for PDX_172/Patient_172
+Note that:  
+* BC976 stands for PDX_95/Patient_95  
+* BC408 stands for PDX_39/Patient_39  
+* BC1224 stands for PDX_172/Patient_172  
 
 ### MDA-MB-468 model
 There are 3 sub-analyses in this directory: the main analysis ('1.Persister') and
