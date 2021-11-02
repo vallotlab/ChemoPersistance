@@ -408,6 +408,7 @@ resdir_UMAPs <-  file.path(resdir_supervised,"UMAP");if(!file.exists(resdir_UMAP
 resdir_heatmaps <-  file.path(resdir_supervised,"Heatmaps");if(!file.exists(resdir_heatmaps)){dir.create(resdir_heatmaps)}
 
 load(file.path(resSUBdir,"RData","BC1224.RData"))
+load(file.path(resSUBdir,"RData","annot_int.RData"))
 RawCounts = Signal
 gc()
 metadata = annot_int

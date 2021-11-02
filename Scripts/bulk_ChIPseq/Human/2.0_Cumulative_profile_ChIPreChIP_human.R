@@ -27,6 +27,7 @@ genebed$gene = as.character(genebed$gene)
 
 
 regions = list(
+    c("TFCP2L1","chr2",121234528,121339524),
     c("HEDGEHOG:WNT1","chr12",48976356,48984516),
     c("HEDGEHOG:WNT2","chr7",117320595,117327848),
     c("HEDGEHOG:WNT3","chr17",46815025,46822570),
@@ -100,7 +101,7 @@ regions = list(
     c("RUNX1","chr21", 34604667, 36034668)
 )
 
-samples="CutTag_human_bivalence"
+samples="CutTag_human_bivalence_unscaled"
 if(!dir.exists(file.path(resDir,samples))) dir.create(file.path(resDir,samples))
 
 for(i in 1:length(regions)){
@@ -140,14 +141,14 @@ for(i in 1:length(regions)){
         for( i in 1:length(K27)){
             plotBedgraph(as.data.frame(K4_tmp[[i]])[,c(1,2,3,6)],
                          chrom, chromstart,chromend,
-                         range = c(0, max_K4),
+                         # range = c(0, max_K4),
                          addscale = TRUE,
                          ylab=paste0(names(K4_tmp)[i],"\nH3K4me3"),
                          color="#afafafff",cex.lab=1,cex.main=2.1)
-
+            
             plotBedgraph(as.data.frame(K27_tmp[[i]])[,c(1,2,3,6)],
                          chrom, chromstart,chromend,
-                         range = c(0,max_K27),
+                         # range = c(0,max_K27),
                          addscale = TRUE,
                          ylab=paste0(names(K27_tmp)[i],"\nH3K27me3"),
                          color="#afafafff",cex.lab=1,cex.main=2.1)
@@ -167,4 +168,4 @@ for(i in 1:length(regions)){
     }
     
 }
-    
+

@@ -24,7 +24,7 @@ metadata <- as.data.frame(annot_subset)
 ####################################################################
 ### COMPARISON SETUP  
 ####################################################################
-# log2FC_thresholds <- log2(3)
+log2FC_thresholds <- log2(3)
 Signif_threshold <- 0.01
 
 ## Type of analysis
