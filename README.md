@@ -14,36 +14,56 @@ The following hiearchy should be kept:
 
 ```
 input/
-├── bulk_ChIPseq  
-│   ├── MM468  
-│   │   ├── BigWigs  
-│   │   └── ChIPreChIP  
-│   └── PDX  
-│       ├── BigWigs  
-│       └── Count_Matrices  
-├── Packages  
-├── scChIPseq  
-│   ├── MM468  
-│   │   ├── BigWigs  
-│   │   ├── Count_Matrices  
-│   │   └── Raw_Counts  
-│   │       ├── K27  
-│   │       └── K4  
-│   └── PDX  
-│       ├── BigWigs  
-│       └── Count_Matrices  
-└── scRNAseq  
-    ├── MM468  
-    │   └── barcoding_output  
-    └── PDX  
+├── bulk_ChIPseq
+│   ├── Human
+│   │   ├── BigWigs
+│   │   └── Count_Matrices
+│   ├── InVitro
+│   │   ├── bulk_ChIPseq
+│   │   │   ├── BigWigs
+│   │   │   └── Count_Matrices
+│   │   └── ChIPreChIP
+│   │       ├── BigWigs_Compare
+│   │       │   └── Raw
+│   │       ├── BigWigs_Coverage
+│   │       └── Peaks
+│   └── PDX
+│       └── ChIPreChIP
+│           ├── BigWigs_Compare
+│           │   └── Raw
+│           ├── BigWigs_Coverage
+│           └── Peaks
+├── scChIPseq
+│   ├── MM468
+│   │   ├── BigWigs
+│   │   ├── Count_Matrices
+│   │   └── Raw_Counts
+│   │       ├── K27
+│   │       └── K4
+│   └── PDX
+│       ├── BigWigs
+│       │   ├── HBCx95_m43_UNT_H3K27me3.bw
+│       │   └── HBCx95_m43_UNT_H3K4me3.bw
+│       └── Count_Matrices
+│           ├── HBCx95_m43_UNT_H3K27me3_TSS.tsv.gz
+│           └── HBCx95_m43_UNT_H3K4me3_TSS.tsv.gz
+└── scRNAseq
+    ├── MM468
+    └── PDX
+
+
     
 ```
 Please refer to the scripts if you have doubts where you should place your input 
 files.
 
-## 1.0 scRNA
-### PDX model
-Run the scripts in the order (1.0, 2.0, 3.0).  
+## 1.0 scRNA-seq
+
+### PDX models
+Note that:  
+* BC976 stands for PDX_95/Patient_95  
+* BC408 stands for PDX_39/Patient_39  
+* BC1224 stands for PDX_172/Patient_172  
 
 ### MDA-MB-468 model
 There are 3 sub-analyses in this directory: the main analysis ('1.Persister') and
@@ -54,10 +74,13 @@ in each given analyses. Note that you must first run the single-cell ChIPseq ana
 before running the script '*5.0_ComparisonChIPseq.R*'.
 
 
-## 2.0 scChIP
+## 2.0 scChIP-seq
 Run the scripts of H3K27me3 and H3K4me3 in any order.
 
-## 3.0 bulk ChIPseq
+## 3.0 ChIPreChIP (a.k.a. Sequential ChIP-seq)
+Run these scripts to retrieve bivalent genes as well as bivalent pathways.
+
+## 4.0 bulk ChIPseq
 These scripts are mainly to produce snapshots of specific genes from the bigwigs.
 
 
